@@ -8,7 +8,7 @@ int main(int argc, char *argv[])
 {
     array<array<unsigned char, 19>, 19> sample;
 
-    FileReader fr("pepep");
+    FileReader fr("../train/face");
     sample = fr.getSample();
 
     for (int row = 0; row < 19; row++)
