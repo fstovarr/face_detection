@@ -9,8 +9,8 @@ using namespace std;
 
 class FileReader
 {
-    vector<string> files;
-    vector<string>::iterator currentFile;
+    vector<string> _files;
+    vector<string>::iterator _currentFile;
 
 public:
     FileReader(string folder)
@@ -23,8 +23,8 @@ public:
             while ((ent = readdir(dir)) != NULL)
             {
                 tmp = ent->d_name;
-                if(tmp.size() > 2)
-                    files.push_back(folder + "/" + tmp);
+                if (tmp.size() > 2)
+                    _files.push_back(folder + "/" + tmp);
             }
             closedir(dir);
         }
@@ -33,23 +33,24 @@ public:
             perror("");
         }
 
-        currentFile = files.begin();
+        _currentFile = _files.begin();
     }
 
-    int samplesLeft() {
-        return files.end() - currentFile;
-    }
-
-    int getSample(array<array<unsigned char, 19>, 19> *array)
+    int remainingSamples()
     {
-        ifstream infile(*currentFile);
+        return _files.end() - _currentFile;
+    }
+
+    int getSample(vector<vector<unsigned char>> *array)
+    {
+        ifstream infile(*_currentFile);
         if (!infile.good())
         {
-            perror((*currentFile).c_str());
+            perror((*_currentFile).c_str());
             return NULL;
         }
 
-        ++currentFile;
+        ++_currentFile;
 
         stringstream ss;
         string inputLine = "";
@@ -63,8 +64,16 @@ public:
         unsigned char tmp;
 
         for (row = 0; row < numrows; ++row)
+        {
+            vector<unsigned char> tmpVec;
             for (col = 0; col < numcols; ++col)
-                ss >> (*array)[row][col];
+            {
+                ss >> tmp;
+                tmpVec.push_back(tmp);
+            }
+
+            (*array).push_back(tmpVec);
+        }
 
         infile.close();
         return numrows * numcols;
