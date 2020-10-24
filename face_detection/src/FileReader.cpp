@@ -2,24 +2,55 @@
 #include <fstream>
 #include <sstream>
 #include <array>
+#include <dirent.h>
+#include <vector>
 
 using namespace std;
 
 class FileReader
 {
-    string file;
+    vector<string> files;
+    vector<string>::iterator currentFile;
 
 public:
-    FileReader(string filename)
+    FileReader(string folder)
     {
-        file = filename;
+        DIR *dir;
+        struct dirent *ent;
+        string tmp;
+        if ((dir = opendir(folder.c_str())) != NULL)
+        {
+            while ((ent = readdir(dir)) != NULL)
+            {
+                tmp = ent->d_name;
+                if(tmp.size() > 2)
+                    files.push_back(folder + "/" + tmp);
+            }
+            closedir(dir);
+        }
+        else
+        {
+            perror("");
+        }
+
+        currentFile = files.begin();
     }
 
-    array<array<unsigned char, 19>, 19> getSample()
-    {
-        array<array<unsigned char, 19>, 19> array;
+    int samplesLeft() {
+        return files.end() - currentFile;
+    }
 
-        ifstream infile("./img/train/face/face00001.pgm");
+    int getSample(array<array<unsigned char, 19>, 19> *array)
+    {
+        ifstream infile(*currentFile);
+        if (!infile.good())
+        {
+            perror((*currentFile).c_str());
+            return NULL;
+        }
+
+        ++currentFile;
+
         stringstream ss;
         string inputLine = "";
 
@@ -33,12 +64,9 @@ public:
 
         for (row = 0; row < numrows; ++row)
             for (col = 0; col < numcols; ++col)
-            {
-                ss >> tmp;
-                array[row][col] = tmp;
-            }
+                ss >> (*array)[row][col];
 
         infile.close();
-        return array;
+        return numrows * numcols;
     }
 };
