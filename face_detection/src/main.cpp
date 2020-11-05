@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include "FileReader.cpp"
+#include "IntegralImage.cpp"
 
 using namespace std;
 
@@ -20,14 +21,8 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        for (int row = 0; row < sample.size(); row++)
-        {
-            for (int col = 0; col < 19; col++)
-                cout << (int)sample[row][col] << "\t";
-            cout << endl;
-        }
-        cout << "-----------";
-        
+        IntegralImage ii(&sample, sample[0].size());
+
         // TODO: change function (O(N))
         sample.clear();
     }
