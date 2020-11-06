@@ -1,5 +1,6 @@
 #include <array>
 #include <vector>
+#include "RectangleRegion.cpp"
 
 using namespace std;
 
@@ -34,6 +35,11 @@ public:
                 _integral[x][y] = top + left - topLeft + current;
             }
         }
+    }
+
+    long int getArea(RectangleRegion rr)
+    {
+        return getArea(rr.getTopLeft(), rr.getBottomRight());
     }
 
     long int getArea(pair<int, int> topLeft, pair<int, int> bottomRight)
