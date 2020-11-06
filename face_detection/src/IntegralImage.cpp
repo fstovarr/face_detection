@@ -8,6 +8,13 @@ class IntegralImage
     vector<vector<long int>> _integral;
     int _size;
 
+    long int _getSubArea(int x, int y)
+    {
+        if (x < 0 || y < 0 || x > _size || y > _size)
+            return 0L;
+        return _integral[x][y];
+    }
+
 public:
     IntegralImage(vector<vector<unsigned char>> *image, int size)
     {
@@ -31,19 +38,19 @@ public:
 
     long int getArea(pair<int, int> topLeft, pair<int, int> bottomRight)
     {
-        if (topLeft.first < 0 || topLeft.second < 0 || bottomRight.first < 0 || bottomRight.second < 0)
+        if (topLeft.first < 0 || topLeft.second < 0 || bottomRight.first < 0 || bottomRight.second < 0 ||
+            topLeft.first >= _size || topLeft.second >= _size || bottomRight.first >= _size || bottomRight.second >= _size)
             throw "Out of bounds";
 
-        topLeft.first = (topLeft.first - 1) >= 0 ? topLeft.first - 1 : 0;
-        topLeft.second = (topLeft.second - 1) >= 0 ? topLeft.second - 1 : 0;
+        pair<int, int> topRight = make_pair(topLeft.first - 1, bottomRight.second - 1),
+                       bottomLeft = make_pair(bottomRight.first - 1, topLeft.second - 1);
 
-        pair<int, int> topRight = make_pair(topLeft.first, bottomRight.second),
-                       bottomLeft = make_pair(bottomRight.first, topLeft.second);
+        long int brArea = _getSubArea(bottomRight.first, bottomRight.second);
+        long int tlArea = _getSubArea(topLeft.first, topLeft.second);
+        long int blArea = _getSubArea(bottomLeft.first, bottomLeft.second);
+        long int trArea = _getSubArea(topRight.first, topRight.second);
 
-        return _integral[bottomRight.first][bottomRight.second] +
-               _integral[topLeft.first][topLeft.second] -
-               _integral[bottomLeft.first][bottomLeft.second] -
-               _integral[topRight.first][topRight.second];
+        return brArea + tlArea - blArea - blArea;
     }
 
     void print()
