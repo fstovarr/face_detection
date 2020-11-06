@@ -2,13 +2,21 @@
 #include <vector>
 #include "FileReader.cpp"
 #include "IntegralImage.cpp"
+#include "Features.cpp"
 
 using namespace std;
 
+void test() {
+  test_feature2h();
+}
+
 int main(int argc, char *argv[])
 {
+    test();
+    return 0;
     FileReader fr("./img/train/face/");
     vector<vector<unsigned char>> sample;
+
     int i = 0;
     while (fr.remainingSamples())
     {

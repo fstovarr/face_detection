@@ -28,6 +28,8 @@ public:
         Constructor(image, size);
     }
 
+    vector<long int>& operator[] (size_t i) { return _integral[i]; };
+
     long int getArea(RectangleRegion rr)
     {
         return getArea(rr.getTopLeft(), rr.getBottomRight());
@@ -39,13 +41,11 @@ public:
             topLeft.first >= _size || topLeft.second >= _size || bottomRight.first >= _size || bottomRight.second >= _size)
             throw "Out of bounds";
 
-        pair<int, int> topRight = make_pair(topLeft.first - 1, bottomRight.second - 1),
-                       bottomLeft = make_pair(bottomRight.first - 1, topLeft.second - 1);
+        pair<int, int> bottomLeft = make_pair(bottomRight.first - 1, topLeft.second - 1);
 
         long int brArea = _getSubArea(bottomRight.first, bottomRight.second);
         long int tlArea = _getSubArea(topLeft.first, topLeft.second);
         long int blArea = _getSubArea(bottomLeft.first, bottomLeft.second);
-        long int trArea = _getSubArea(topRight.first, topRight.second);
 
         return brArea + tlArea - blArea - blArea;
     }
