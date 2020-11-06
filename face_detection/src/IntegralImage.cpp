@@ -20,10 +20,10 @@ class IntegralImage
 public:
     IntegralImage(Image image, int size)
     {
-        Constructor(&image.getImage(), image.getSize());
+        Constructor(image.getImage(), image.getSize());
     }
 
-    IntegralImage(vector<vector<unsigned char>> *image, int size)
+    IntegralImage(vector<vector<unsigned char>> const &image, int size)
     {
         Constructor(image, size);
     }
@@ -68,7 +68,7 @@ public:
     }
 
 private:
-    void Constructor(vector<vector<unsigned char>> *image, int size)
+    void Constructor(vector<vector<unsigned char>> const &image, int size)
     {
         _integral = vector<vector<long int>>(size, vector<long int>(size, 0));
         _size = size;
@@ -82,7 +82,7 @@ private:
                 top = (x - 1) >= 0 ? _integral[x - 1][y] : 0;
                 left = (y - 1) >= 0 ? _integral[x][y - 1] : 0;
                 topLeft = (x - 1) >= 0 && (y - 1) >= 0 ? _integral[x - 1][y - 1] : 0;
-                current = (int)(*image)[x][y];
+                current = (int)(image)[x][y];
                 _integral[x][y] = top + left - topLeft + current;
             }
         }
