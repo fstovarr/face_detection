@@ -1,3 +1,5 @@
+#ifndef LOCATIONS_H
+#define LOCATIONS_H
 #include <vector>
 #include <iostream>
 #include <numeric>
@@ -11,7 +13,7 @@ struct Size{
 
 
 ostream& operator << (ostream& os, Size sz) {
-  os << "Size(height=" << sz.height << ", " << sz.width << ")";
+  os << "Size(height=" << sz.height << ", width=" << sz.width << ")";
   return os;
 }
 
@@ -19,8 +21,13 @@ struct Location{
   int left, top;
 };
 
+ostream& operator << (ostream& os, Location loc) {
+  os << "Location(top=" << loc.top << ", left=" << loc.left << ")";
+  return os;
+}
+
 vector<int> possiblePositions(int size, int window_size = WINDOW_SIZE) {
-  vector<int> v(size - window_size + 1);
+  vector<int> v(window_size - size + 1);
   iota(v.begin(), v.end(), 0);
   return v;
 }
@@ -51,11 +58,10 @@ vector<Size> possibleShapes(Size base_shape, int window_size = WINDOW_SIZE) {
 void test_locations() {
   for (auto x : possibleShapes(Size{1, 2}, 5)) {
     cout << x << "\n";
-
   }
-  /*for (auto ) {
+  for (auto x : possibleLocations(Size{1, 2}, 5)) {
+    cout << x << "\n";
   }
-  */
 }
-
+#endif
 

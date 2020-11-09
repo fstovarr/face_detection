@@ -1,7 +1,10 @@
+#ifndef FEATURES_H
+#define FEATURES_H
 #include <vector>
 #include <iostream>
 #include <string>
 #include <assert.h>
+#include "Locations.cpp"
 
 using namespace std;
 
@@ -153,6 +156,28 @@ Feature feature4(int x, int y, int width, int height) {
   return Feature{x, y, width, height, coords_x, coords_y, coeffs, "Feature4"};
 }
 
+typedef Feature (*FeatureConstructor) (int x, int y, int width, int height);
+
+vector<Feature> getFeatures(int window_size=24) {
+  vector<Feature> features;
+
+  FeatureConstructor constructors[] = {feature2h, feature2v, feature3h, feature3v, feature4};
+  Size sizes[] = {Size{1, 2}, Size{2, 1}, Size{1, 3}, Size{3, 1}, Size{2, 2}};
+
+  for (int i = 0; i < 5; ++i) {
+    for (auto shape : possibleShapes(sizes[i], window_size)) {
+      for (auto location : possibleLocations(shape, window_size)) {
+        Feature t = constructors[i](location.left, location.top, shape.width, shape.height);
+        features.push_back(t);
+      }
+    }
+  }
+
+  return features;
+}
+
+vector<vector<int>> applyFeaturesF5(vector<Feature> features, vector<Image> images) {
+}
 
 
 void test_feature2h() {
@@ -198,6 +223,8 @@ void test_feature2h() {
   actual = feature4(0, 0, 4, 4)(sample_integral);
   assert(expected == actual);
 
+
 }
 
 
+#endif

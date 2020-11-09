@@ -5,6 +5,7 @@
 #include "Image.cpp"
 #include "IntegralImage.cpp"
 #include "RectangleRegion.cpp"
+#include "Features.cpp"
 
 using namespace std;
 
@@ -25,20 +26,37 @@ public:
     void train(vector<pair<Image, int>> training, int positiveSamples, int negativeSamples)
     {
         vector<double> weights = vector<double>(training.size(), 0);
-        vector<pair<IntegralImage, int>> trainingData;
-        for (int i = 0; i < training.size(); i++)
+
+        vector<vector<int>> X;
+        vector<int> y(training.size());
+
+        // initialize weights and y
+        for (size_t i = 0; i < training.size(); i++)
         {
             pair<Image, int> sample = training[i];
 
-            trainingData.push_back(make_pair(IntegralImage(&sample.first.getImage(), sample.first.getSize()), sample.second));
-
             weights[i] = 1.0 / (2 * (sample.second == 1 ? positiveSamples : negativeSamples));
+            y[i] = sample.second;
         }
 
-        vector<vector<RectangleRegion *>> features = buildFeatures(trainingData[0].first.getSize(), trainingData[0].first.getSize());
-        pair<vector<vector<int>>, vector<int>> featuresApplied = applyFeatures(features, trainingData);
-        vector<vector<int>> X = featuresApplied[0];
-        vector<int> y = featuresApplied[1];
+        // use 5 features instead of 4
+        bool useF5 = true;
+
+        if (useF5) {
+          vector<Feature> f5 = getFeatures(training);
+          y = vector<int>(trainingData.size());
+
+          X = applyFeaturesF5(f5, );
+
+
+        } else {
+          vector<IntegralImage> iis(training.size());
+          for (size_t i = 0; i < training.size(); i++) {
+              iis[i] = IntegralImage(training[i].first);
+          }
+          vector<vector<RectangleRegion *>> features = buildFeatures(iis[0].getSize(), iis[0].getSize());
+          X = applyFeatures(features, iis);
+        }
 
         // TODO: Select best 10% of samples
 
@@ -164,30 +182,27 @@ public:
         return features;
     }
 
-    pair<vector<vector<int>>, vector<int>> applyFeatures(vector<vector<RectangleRegion *>> features, vector<pair<IntegralImage, int>> trainingData)
+    vector<vector<int>> applyFeatures(vector<vector<RectangleRegion *>> features, vector<IntegralImage> trainingData)
     {
         vector<vector<int>> X = vector<vector<int>>(features.size(), vector<int>(trainingData.size(), 0));
-        vector<int> y = vector<int>(trainingData.size(), 0);
-        for (int i = 0; i < trainingData.size(); i++)
-            y[i] = trainingData[i].second;
 
         int i = 0;
         long int tmp = 0L;
         for (vector<RectangleRegion *> f : features)
         {
             tmp = 0L;
-            for (pair<IntegralImage, int> td : trainingData)
+            for (IntegralImage td : trainingData)
             {
                 for (int j = 0; j < f.size(); j++)
                 {
                     if (!(*f[j]).isDummy())
-                        tmp += td.first.getArea(*f[j]);
+                        tmp += td.getArea(*f[j]);
                 }
             }
 
             X[i++].push_back(tmp);
         }
 
-        return make_pair(X, y);
+        return X;
     }
 };

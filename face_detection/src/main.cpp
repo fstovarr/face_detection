@@ -3,11 +3,16 @@
 #include "FileReader.cpp"
 #include "IntegralImage.cpp"
 #include "Features.cpp"
+#include "Locations.cpp"
 
 using namespace std;
 
 void test() {
+  cout << "Running test\n";
   test_feature2h();
+  test_locations();
+  vector<Feature> features = getFeatures(15);
+  cout << features.size();
 }
 
 int main(int argc, char *argv[])
