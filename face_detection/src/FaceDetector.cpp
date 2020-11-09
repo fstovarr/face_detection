@@ -44,58 +44,29 @@ public:
 
         printf("RR %d \n", sizeof(RectangleRegion));
 
-        vector<vector<RectangleRegion *>> features = buildFeatures(trainingData[0].first.getSize(), trainingData[0].first.getSize());
+        vector<vector<RectangleRegion>> features = buildFeatures(trainingData[0].first.getSize(), trainingData[0].first.getSize());
 
-        cout << features.size() << " - " << features[0].size() << endl;
+        // int c = 0;
+        // for (int i = 0; i < features.size(); i++)
+        // {
+        //     for (int j = 0; j < features[0].size(); j++)
+        //     {
+        //         if (features[i][j].isDummy() == false)
+        //         {
+        //             features[i][j].print();
+        //             if (++c == 50)
+        //                 break;
+        //         }
+        //     }
+        //     if (c == 50)
+        //         break;
+        // }
 
-        int c = 0;
-        for (int i = 0; i < features.size(); i++)
-        {
-            for (int j = 0; j < features[0].size(); j++)
-            {
-                if ((*features[i][j]).isDummy() == false)
-                {
-                    (*features[i][j]).print();
-                    if (++c == 10)
-                        break;
-                }
-            }
-            if (c == 10)
-                break;
-        }
 
-        cout << "FINISH ----------------------- " << features.size() << endl;
+        pair<vector<vector<int>>, vector<int>> featuresApplied = applyFeatures(features, trainingData);
 
-        int fSize = features.size();
-
-        int trainSize = trainingData.size();
-        vector<vector<int>> X(5000);
-        for (int i = 0; i < X.size(); i++)
-        {
-            X[i] = vector<int>(10);
-        }
-
-        // applyFeatures(features, trainingData);
-        cout << "----------------------- FINISH  " << endl;
-
-        c = 0;
-        for (int i = 0; i < features.size(); i++)
-        {
-            for (int j = 0; j < features[0].size(); j++)
-            {
-                if ((*features[i][j]).isDummy() == false)
-                {
-                    (*features[i][j]).print();
-                    if (++c == 10)
-                        break;
-                }
-            }
-            if (c == 10)
-                break;
-        }
-
-        // vector<vector<int>> X = featuresApplied.first;
-        // vector<int> y = featuresApplied.second;
+        vector<vector<int>> X = featuresApplied.first;
+        vector<int> y = featuresApplied.second;
 
         // for (int t = 0; t < _weakClassifiers; t++)
         // {
@@ -118,14 +89,14 @@ public:
         // }
     }
 
-    vector<vector<RectangleRegion *>> buildFeatures(int imgWidth, int imgHeight)
+    vector<vector<RectangleRegion>> buildFeatures(int imgWidth, int imgHeight)
     {
         int i = 0, j = 0;
 
-        vector<vector<RectangleRegion *>> features;
+        vector<vector<RectangleRegion>> features;
         RectangleRegion current, right, bottom, right2, bottom2, bottomRight;
         RectangleRegion dummy = RectangleRegion();
-        vector<RectangleRegion *> tmp = vector<RectangleRegion *>(4, &dummy);
+        vector<RectangleRegion> tmp(4);
 
         for (int w = 1; w < imgWidth + 1; w++)
         {
@@ -141,58 +112,47 @@ public:
 
                         if (i + 2 * w < imgWidth)
                         {
-                            right = RectangleRegion(i + w, j, w, h);
-                            tmp[1] = tmp[3] = &dummy;
-                            tmp[0] = &right;
-                            tmp[2] = &current;
+                            tmp[1] = tmp[3] = dummy;
+                            tmp[0] = RectangleRegion(i + w, j, w, h);
+                            tmp[2] = current;
                             features.push_back(tmp);
                         }
 
                         if (i + 3 * w < imgWidth)
                         {
-                            right = RectangleRegion(i + w, j, w, h);
-                            right2 = RectangleRegion(i + 2 * w, j, w, h);
-                            tmp[1] = &dummy;
-                            tmp[0] = &right;
-                            tmp[2] = &right2;
-                            tmp[3] = &current;
+                            tmp[1] = dummy;
+                            tmp[0] = RectangleRegion(i + w, j, w, h);
+                            tmp[2] = RectangleRegion(i + 2 * w, j, w, h);
+                            tmp[3] = current;
                             features.push_back(tmp);
                         }
 
                         if (j + 2 * h < imgHeight)
                         {
-                            bottom = RectangleRegion(i, j + h, w, h);
-                            tmp[1] = tmp[3] = &dummy;
-                            tmp[0] = &current;
-                            tmp[2] = &bottom;
-
+                            tmp[1] = tmp[3] = dummy;
+                            tmp[0] = current;
+                            tmp[2] = RectangleRegion(i, j + h, w, h); // bottom
                             features.push_back(tmp);
                         }
 
                         if (j + 3 * h < imgHeight)
                         {
-                            bottom = RectangleRegion(i, j + h, w, h);
-                            bottom2 = RectangleRegion(i, j + 2 * h, w, h);
-
-                            tmp[1] = &dummy;
-                            tmp[0] = &bottom;
-                            tmp[2] = &bottom2;
-                            tmp[3] = &current;
+                            tmp[1] = dummy;
+                            tmp[0] = RectangleRegion(i, j + h, w, h);
+                            tmp[2] = RectangleRegion(i, j + 2 * h, w, h);
+                            tmp[3] = current;
                             features.push_back(tmp);
                         }
 
                         if (i + 2 * w < imgWidth && j + 2 * h < imgHeight)
                         {
-                            right = RectangleRegion(i + w, j, w, h);
-                            bottom = RectangleRegion(i, j + h, w, h);
-                            bottomRight = RectangleRegion(i + w, j + h, w, h);
-                            tmp[0] = &right;
-                            tmp[1] = &bottom;
-                            tmp[2] = &current;
-                            tmp[3] = &bottomRight;
-
+                            tmp[0] = RectangleRegion(i + w, j, w, h);
+                            tmp[1] = RectangleRegion(i, j + h, w, h);
+                            tmp[3] = RectangleRegion(i + w, j + h, w, h);
+                            tmp[2] = current;
                             features.push_back(tmp);
                         }
+
                         j++;
                     }
                     i++;
@@ -203,39 +163,29 @@ public:
         return features;
     }
 
-    int applyFeatures(vector<vector<RectangleRegion *>> &features, vector<pair<IntegralImage, int>> &trainingData)
+    pair<vector<vector<int>>, vector<int>> applyFeatures(vector<vector<RectangleRegion>> &features, vector<pair<IntegralImage, int>> &trainingData)
     {
-        // vector<int> y = vector<int>(trainSize);
+        int trainSize = trainingData.size();
+        vector<vector<int>> X(features.size(), vector<int>(trainSize));
+        vector<int> y = vector<int>(trainSize);
 
-        // for (int i = 0; i < trainSize; i++)
-        //     y[i] = trainingData[i].second;
+        for (int i = 0; i < trainSize; i++)
+            y[i] = trainingData[i].second;
 
-        // int i = 0;
-        // long int tmp = 0L;
-        // for (vector<RectangleRegion *> f : features)
-        // {
-        //     tmp = 0L;
-        //     for (pair<IntegralImage, int> td : *trainingData)
-        //     {
-        //         for (RectangleRegion *rr : f)
-        //         {
-        //             if ((*rr).isDummy() == false)
-        //                 (*rr).print();
-        //             if (++i == 10)
-        //                 break;
-        //             // tmp += td.first.getArea(*f[j]);
-        //         }
-        //         if (i == 10)
-        //             break;
-        //     }
-        //     if (i == 10)
-        //         break;
+        int i = 0;
+        long int tmp = 0L;
+        for (vector<RectangleRegion> f : features)
+        {
+            tmp = 0L;
+            for (pair<IntegralImage, int> td : trainingData)
+                for (RectangleRegion rr : f)
+                    if (rr.isDummy() == false)
+                        tmp += td.first.getArea(rr);
 
-        //     X[i++].push_back(tmp);
-        // }
+            X[i++].push_back(tmp);
+        }
 
-        // return make_pair(X, y);
-        return 1;
+        return make_pair(X, y);
     }
 
     vector<WeakClassifier> trainWeak(vector<vector<int>> X, vector<int> y, vector<vector<RectangleRegion *>> features, vector<double> weights)

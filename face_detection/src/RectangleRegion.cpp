@@ -15,6 +15,13 @@ public:
         Constructor(make_pair(-1, -1), make_pair(-1, -1));
     }
 
+    RectangleRegion(const RectangleRegion &old_obj)
+    {
+        _dummy = old_obj._dummy;
+        _topLeft = old_obj._topLeft;
+        _bottomRight = old_obj._bottomRight;
+    }
+
     RectangleRegion(int x, int y, int h, int w)
     {
         Constructor(make_pair(x, y), make_pair(x + h, y + w));
@@ -52,6 +59,5 @@ private:
     {
         _topLeft = topLeft;
         _bottomRight = bottomRight;
-        _dummy = false;
     }
 };
