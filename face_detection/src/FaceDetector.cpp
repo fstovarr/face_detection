@@ -62,31 +62,30 @@ public:
         //         break;
         // }
 
-
         pair<vector<vector<int>>, vector<int>> featuresApplied = applyFeatures(features, trainingData);
 
         vector<vector<int>> X = featuresApplied.first;
         vector<int> y = featuresApplied.second;
 
-        // for (int t = 0; t < _weakClassifiers; t++)
-        // {
-        //     printf("2");
-        //     // normalize(weights); // NORM
-        //     vector<WeakClassifier> weakClassifiers = trainWeak(X, y, features, weights);
-        //     tuple<WeakClassifier, double, vector<double>> best = selectBest(weakClassifiers, weights, trainingData);
-        //     WeakClassifier bestClf = get<0>(best);
-        //     double bestError = get<1>(best);
-        //     vector<double> bestAccuracy = get<2>(best);
-        //     double beta = bestError / (1.0 / bestError);
-        //     for (int i = 0; i < bestAccuracy.size(); i++)
-        //         weights[i] *= (pow(beta, 1 - bestAccuracy[i]));
+        for (int t = 0; t < _weakClassifiers; t++)
+        {
+            printf("2");
+            // normalize(weights); // NORM
+            vector<WeakClassifier> weakClassifiers = trainWeak(X, y, features, weights);
+            tuple<WeakClassifier, double, vector<double>> best = selectBest(weakClassifiers, weights, trainingData);
+            WeakClassifier bestClf = get<0>(best);
+            double bestError = get<1>(best);
+            vector<double> bestAccuracy = get<2>(best);
+            double beta = bestError / (1.0 / bestError);
+            for (int i = 0; i < bestAccuracy.size(); i++)
+                weights[i] *= (pow(beta, 1 - bestAccuracy[i]));
 
-        //     double alpha = log(1.0 / beta);
-        //     _alphas.push_back(alpha);
-        //     _alphasSum += alpha;
-        //     _clfs.push_back(bestClf);
-        //     printf("Chose classifier: %d with accuracy: and alpha: %f", t, alpha);
-        // }
+            double alpha = log(1.0 / beta);
+            _alphas.push_back(alpha);
+            _alphasSum += alpha;
+            _clfs.push_back(bestClf);
+            printf("Chose classifier: %d with accuracy: and alpha: %f", t, alpha);
+        }
     }
 
     vector<vector<RectangleRegion>> buildFeatures(int imgWidth, int imgHeight)
@@ -188,7 +187,7 @@ public:
         return make_pair(X, y);
     }
 
-    vector<WeakClassifier> trainWeak(vector<vector<int>> X, vector<int> y, vector<vector<RectangleRegion *>> features, vector<double> weights)
+    vector<WeakClassifier> trainWeak(vector<vector<int>> &X, vector<int> &y, vector<vector<RectangleRegion>> &features, vector<double> &weights)
     {
         double totalPos = 0;
         double totalNeg = 0;
@@ -224,7 +223,7 @@ public:
             double posWeights = 0.0, negWeights = 0.0;
             double minError = DBL_MAX, bestPolarity = 0.0, error = 0.0;
             vector<int> bestThreshold;
-            vector<RectangleRegion *> bestFeature;
+            vector<RectangleRegion> bestFeature;
 
             for (auto wh : appliedFeature)
             {
