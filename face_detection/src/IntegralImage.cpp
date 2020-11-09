@@ -1,5 +1,6 @@
 #include <array>
 #include <vector>
+
 #include "RectangleRegion.cpp"
 #include "Image.cpp"
 
@@ -18,7 +19,7 @@ class IntegralImage
     }
 
 public:
-    IntegralImage(Image image, int size)
+    IntegralImage(Image image)
     {
         Constructor(image.getImage(), image.getSize());
     }
@@ -28,24 +29,38 @@ public:
         Constructor(image, size);
     }
 
-    vector<long int>& operator[] (size_t i) { return _integral[i]; };
+    vector<long int> &operator[](size_t i) { return _integral[i]; };
 
-    long int getArea(RectangleRegion rr)
+    long int getArea(RectangleRegion &rr)
     {
         return getArea(rr.getTopLeft(), rr.getBottomRight());
     }
 
     long int getArea(pair<int, int> topLeft, pair<int, int> bottomRight)
     {
+        cout << "ASDASDASD AS " << endl;
+
         if (topLeft.first < 0 || topLeft.second < 0 || bottomRight.first < 0 || bottomRight.second < 0 ||
             topLeft.first >= _size || topLeft.second >= _size || bottomRight.first >= _size || bottomRight.second >= _size)
+        {
+            cout << " SIZE " << _size << endl;
+            cout << topLeft.first << " . " << topLeft.second << endl;
+            cout << bottomRight.first << " . " << bottomRight.second << endl;
+            cout << "F " << endl;
             throw "Out of bounds";
+        }
+
+        cout << "ASDASDASD AS " << endl;
 
         pair<int, int> bottomLeft = make_pair(bottomRight.first - 1, topLeft.second - 1);
 
+        cout << "ASDASDASD AS 1 " << endl;
         long int brArea = _getSubArea(bottomRight.first, bottomRight.second);
+        cout << "ASDASDASD AS 2 " << endl;
         long int tlArea = _getSubArea(topLeft.first, topLeft.second);
+        cout << "ASDASDASD AS 3 " << endl;
         long int blArea = _getSubArea(bottomLeft.first, bottomLeft.second);
+        cout << "ASDASDASD AS 4 " << endl;
 
         return brArea + tlArea - blArea - blArea;
     }

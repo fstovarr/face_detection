@@ -1,20 +1,17 @@
 #include <iostream>
 #include <vector>
 
-#include "RectangleRegion.cpp"
-#include "IntegralImage.cpp"
-
 using namespace std;
 
 class WeakClassifier
 {
-    vector<RectangleRegion> _positiveRegions;
-    vector<RectangleRegion> _negativeRegions;
+    vector<RectangleRegion *> _positiveRegions;
+    vector<RectangleRegion *> _negativeRegions;
     double _threshold;
     double _polarity;
 
 public:
-    WeakClassifier(vector<RectangleRegion> positiveRegions, vector<RectangleRegion> negativeRegions, double threshold, double polarity)
+    WeakClassifier(vector<RectangleRegion *> positiveRegions, vector<RectangleRegion *> negativeRegions, double threshold, double polarity)
     {
         _positiveRegions = positiveRegions;
         _negativeRegions = negativeRegions;
@@ -25,15 +22,15 @@ public:
     int classify(IntegralImage ii)
     {
         long int accPos = 0L;
-        for (auto region : _positiveRegions)
+        for (RectangleRegion *region : _positiveRegions)
         {
-            accPos += ii.getArea(region);
+            accPos += ii.getArea(*region);
         }
 
         long int accNeg = 0L;
-        for (auto region : _negativeRegions)
+        for (RectangleRegion *region : _negativeRegions)
         {
-            accNeg += ii.getArea(region);
+            accNeg += ii.getArea(*region);
         }
 
         if (_polarity * (accPos - accNeg) < _polarity * _threshold)
