@@ -28,7 +28,7 @@ public:
             else
                 accNeg += (ii.getArea(_regions[k]));
 
-        if (_polarity * (accPos - accNeg) < _polarity * _threshold)
+        if ((_polarity * (accPos - accNeg)) < (_polarity * _threshold))
             return 1;
         return 0;
     }

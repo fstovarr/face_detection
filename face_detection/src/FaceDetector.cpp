@@ -1,6 +1,6 @@
 #include <array>
 #include <vector>
-#include <math.h>
+#include <cmath>
 #include <tuple>
 #include <float.h>
 #include <algorithm>
@@ -75,15 +75,21 @@ public:
 
         for (int t = 0; t < _weakClassifiers; t++)
         {
-            // normalize(weights); // NORM
+            double normWeights = norm(weights);
+            for (int w_i = 0; w_i < weights.size(); w_i++)
+                weights[w_i] = weights[w_i] / normWeights;
+
             vector<WeakClassifier> weakClassifiers = trainWeak(X, y, features, weights);
             tuple<WeakClassifier, double, vector<double>> best = selectBest(weakClassifiers, weights, trainingData);
+
             WeakClassifier bestClf = get<0>(best);
             double bestError = get<1>(best);
             vector<double> bestAccuracy = get<2>(best);
             double beta = bestError / (1.0 / bestError);
             for (int i = 0; i < bestAccuracy.size(); i++)
+            {
                 weights[i] *= (pow(beta, 1 - bestAccuracy[i]));
+            }
 
             double alpha = log(1.0 / beta);
             _alphas.push_back(alpha);
@@ -127,7 +133,7 @@ public:
                             tmp[1] = dummy;
                             tmp[0] = RectangleRegion(i + w, j, w, h);
                             tmp[2] = RectangleRegion(i + 2 * w, j, w, h);
-                           tmp[3] = current;
+                            tmp[3] = current;
                             features.push_back(tmp);
                         }
 
@@ -267,44 +273,38 @@ public:
         return classifiers;
     }
 
-    // void normalize(vector<double> *x)
-    // {
-    //     double norm = norm(x);
-
-    //     for (int i = 0; i < (*x).size(); i++)
-    //         (*x[i])[i] /= norm;
-    // }
-
-    // double norm(vector<double> x)
-    // {
-    //     double ans = 0.0;
-    //     for (double el : x)
-    //     {
-    //         ans += x * x;
-    //     }
-    //     return sqrt(ans);
-    // }
+    double norm(vector<double> &mat)
+    {
+        double sum = 0;
+        for (int i = 0; i < mat.size(); i++)
+            sum += (mat[i] * mat[i]);
+        return sqrt(sum);
+    }
 
     tuple<WeakClassifier, double, vector<double>> selectBest(vector<WeakClassifier> &classifiers, vector<double> &weights, vector<pair<IntegralImage, int>> &trainingData)
     {
         double bestError, error, correctness;
         vector<double> bestAccuracy;
-        bestError = error = correctness = 0.0;
+        bestError = error = DBL_MAX;
+        correctness = 0.0;
+
         WeakClassifier bestClf = classifiers[0];
-        vector<double> accuracy;
         for (WeakClassifier clf : classifiers)
         {
             correctness = error = 0.0;
-            accuracy.clear();
+            vector<double> accuracy;
+            double w;
 
             for (int i = 0; i < trainingData.size(); i++)
             {
-                correctness = abs(clf.classify(trainingData[i].first) - weights[i]);
+                int prediction = clf.classify(trainingData[i].first);
+                correctness = abs((prediction)-trainingData[i].second);
+                error += (correctness * weights[i]);
                 accuracy.push_back(correctness);
-                error += correctness;
+                w = weights[i];
             }
 
-            error /= trainingData.size();
+            error = error / (trainingData.size() * 1.0);
 
             if (error < bestError)
             {

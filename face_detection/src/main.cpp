@@ -84,9 +84,15 @@ int main(int argc, char *argv[])
 
     int negativeSamples = loadSamples("./img/train/non-face/", &trainingData, 0, n);
 
-    trainF5(trainingData);
-    //FaceDetector fd = FaceDetector(10);
-  
-    //fd.train(trainingData, positiveSamples, negativeSamples);
-    // evaluate(&fd, &trainingData);
+    bool useF5 = true;
+
+    if (useF5) {
+      trainF5(trainingData);
+    } else {
+      FaceDetector fd = FaceDetector(10);
+
+      fd.train(trainingData, positiveSamples, negativeSamples);
+      evaluate(&fd, &trainingData);
+    }
+
 }
