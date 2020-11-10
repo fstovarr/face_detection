@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <assert.h>
+#include <map>
 #include "Locations.cpp"
 #include "Boosting.cpp"
 
@@ -79,6 +80,12 @@ class Feature {
     }
 
     friend ostream& operator<<(ostream& os, const Feature& ft);
+
+    string getType() { return type; }
+    int getX() { return x; }
+    int getY() { return y; }
+    int getWidth() { return width; }
+    int getHeight() { return height; }
 };
 
 ostream& operator<<(ostream& os, const Feature& ft) {
@@ -158,6 +165,17 @@ Feature feature4(int x, int y, int width, int height) {
 }
 
 typedef Feature (*FeatureConstructor) (int x, int y, int width, int height);
+
+Feature constructFeature(int x, int y, int width, int height, string type) {
+  map<string, FeatureConstructor> constructors = {
+    {"Feature2h", feature2h},
+    {"Feature2v", feature2v},
+    {"Feature3h", feature3h},
+    {"Feature3v", feature3v},
+    {"Feature4", feature4}
+  };
+  return constructors[type](x, y, width, height);
+}
 
 vector<Feature> getFeatures(int window_size=24) {
   vector<Feature> features;

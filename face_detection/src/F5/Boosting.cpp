@@ -7,8 +7,13 @@
 #include <limits>
 #include <stdlib.h>
 #include <math.h>
+#include <fstream>
 #include "Features.cpp"
+#include "Metrics.cpp"
 #include "../Image.cpp"
+#include "../nlohmann/json.hpp"
+
+using json = nlohmann::json;
 
 
 vector<float> normalizeWeights(vector<float> v) {
@@ -49,15 +54,30 @@ struct WeakClassifierF5 {
     float theta = threshold;
     return (sign((polarity * theta) - (polarity * f(x))) + 1) / 2;
   }
+
+  json to_json() {
+    json j;
+    j["threshold"] = threshold;
+    j["polarity"] = polarity;
+    j["alpha"] = alpha;
+    j["feature"] = {
+      {"type", f.getType()},
+      {"x", f.getX()},
+      {"y", f.getX()},
+      {"width", f.getWidth()},
+      {"height", f.getHeight()},
+    };
+    return j;
+  }
 };
 
 ostream& operator << (ostream& os, WeakClassifierF5 const & clf) {
-  cout << "WeakClassifierF5(threshold= " << clf.threshold << ", polarity=" << clf.polarity << ", alpha=" << clf.alpha << " f=" << clf.f << ")";
+  cout << "WeakClassifierF5(threshold=" << clf.threshold << ", polarity=" << clf.polarity << ", alpha=" << clf.alpha << " f=" << clf.f << ")";
   return os;
 }
 
 template <typename T>
-int strongClassifier(vector<vector<T>> x, vector<WeakClassifierF5> weak_classifiers) {
+int strongClassifier(vector<vector<T>> const & x, vector<WeakClassifierF5> const & weak_classifiers) {
   float sum_hypotheses = 0;
   float sum_alphas = 0;
   for (auto clf : weak_classifiers) {
@@ -73,7 +93,7 @@ struct RunningSums {
   vector<float> s_minuses, s_pluses;
 };
 
-RunningSums buildRunningSums(vector<float> ys, vector<float> ws) {
+RunningSums buildRunningSums(vector<int> ys, vector<float> ws) {
   float s_minus = 0, s_plus = 0;
   float t_minus = 0, t_plus = 0;
   vector<float> s_minuses, s_pluses;
@@ -120,7 +140,7 @@ ThresholdPolarity find_best_threshold(vector<float> zs, RunningSums rs) {
 typedef pair<pair<float, float>, float> f3;
 bool cmp(f3 lh, f3 rh) { return lh.second < rh.second; }
 
-ThresholdPolarity determineThresholdPolarity(vector<float> ys, vector<float> ws, vector<float> zs) {
+ThresholdPolarity determineThresholdPolarity(vector<int> ys, vector<float> ws, vector<float> zs) {
   // sort according to zs
   vector<f3> triplet(ys.size());
   for (size_t i = 0; i < ys.size(); ++i) triplet[i] = {{ys[i], ws[i]}, zs[i]};
@@ -139,11 +159,11 @@ ThresholdPolarity determineThresholdPolarity(vector<float> ys, vector<float> ws,
 
 typedef vector<vector<int>> matrix;
 
-ClassifierResult applyFeature(Feature f, vector<matrix> xis, vector<float> ys, vector<float> ws) {
+ClassifierResult applyFeature(Feature f, vector<matrix> xis, vector<int> ys, vector<float> ws) {
 
   // determine all feature values
   vector<float> zs(xis.size());
-  #pragma omp parallel for
+  #pragma omp parallel for if(USE_OMP)
   for (size_t i = 0; i < xis.size(); ++i) {
     zs[i] = f(xis[i]);
   }
@@ -167,7 +187,7 @@ const float KEEP_PROBABILITY = 1./4.;
 
 typedef pair<vector<WeakClassifierF5>, vector<float>> TrainingResult;
 TrainingResult buildWeakClassifiers(
-    string prefix, int num_features, vector<matrix> xis, vector<float> ys, vector<Feature> features, vector<float> ws
+    string prefix, int num_features, vector<matrix> xis, vector<int> ys, vector<Feature> features, vector<float> ws
   )
 {
   // initialize weights
@@ -209,10 +229,10 @@ TrainingResult buildWeakClassifiers(
       status_counter -= 1;
       improved = false;
 
-      if (KEEP_PROBABILITY < .1) {
+      //if (KEEP_PROBABILITY < .1) {
         float skip_probability = rand();
         if (skip_probability > KEEP_PROBABILITY) continue;
-      }
+      //}
 
       ClassifierResult result = applyFeature(features[i], xis, ys, ws);
       if (result.classification_error < best.classification_error) {
@@ -260,10 +280,45 @@ TrainingResult buildWeakClassifiers(
   return {weak_classifiers, ws};
 }
 
+void writeWeakClassifiers(string prefix, vector<WeakClassifierF5> clf_s) {
+  ofstream o(prefix + "clf_s.jsonl");
+  for (auto clf : clf_s) {
+    o << clf.to_json() << "\n";
+  }
+
+}
+
+vector<WeakClassifierF5> readWeakClassifiers(string prefix, int num_features) {
+  ifstream in(prefix + "clf_s.jsonl");
+  vector<WeakClassifierF5> v;
+  json j;
+  for (int i = 0; i < num_features; ++i) {
+    in >> j;
+    float threshold = j["threshold"];
+    int polarity = j["polarity"];
+    float alpha = j["alpha"];
+    int x = j["feature"]["x"];
+    int y = j["feature"]["y"];
+    int width = j["feature"]["width"];
+    int height = j["feature"]["height"];
+    string type = j["feature"]["type"];
+
+    WeakClassifierF5 clf{
+      threshold,
+      polarity,
+      alpha,
+      constructFeature(x, y, width, height, type)
+    };
+    v.push_back(clf);
+  }
+  return v;
+}
+
+
 void trainF5(vector<pair<Image, int>> trainingData) {
   size_t N = trainingData.size();
   vector<matrix> X(N);
-  vector<float> y(N);
+  vector<int> y(N);
 
   for (size_t i = 0; i < N; ++i) {
     X[i] = to_integral(trainingData[i].first.getIntImage());
@@ -276,14 +331,32 @@ void trainF5(vector<pair<Image, int>> trainingData) {
 
   vector<float> ws;
 
-  cout << X[0].size();
+  vector<WeakClassifierF5> weak_classifiers;
 
-  TrainingResult tr = buildWeakClassifiers("f1", 2, X, y, features, ws); 
+  string prefix = "f1";
+  int num_features = 2;
 
-  vector<WeakClassifierF5> weak_classifiers = tr.first;
+  bool train = false;
+  if (train) {
+    TrainingResult tr = buildWeakClassifiers(prefix, num_features, X, y, features, ws);
+    weak_classifiers = tr.first;
+    writeWeakClassifiers(prefix, weak_classifiers);
+  } else {
+    weak_classifiers = readWeakClassifiers(prefix, num_features);
+  }
+
+
 
   cout << weak_classifiers[0] << "\n";
   cout << weak_classifiers[1] << "\n";
+  vector<int> y_pred(N);
+  for (int i = 0; i < N; ++i) {
+    y_pred[i] = strongClassifier(X[i], weak_classifiers);
+  }
+
+  cout << "Evaluating \n";
+
+  evaluate(y, y_pred);
 
 }
 
