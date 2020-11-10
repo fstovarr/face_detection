@@ -3,6 +3,7 @@
 #include <math.h>
 #include <tuple>
 #include <float.h>
+#include <algorithm>
 
 #include "WeakClassifier.cpp"
 
@@ -11,9 +12,14 @@ using namespace std;
 struct WeakHelper
 {
     double weight;
-    vector<int> feature;
+    int feature;
     int y;
 };
+
+bool compareByFeature(const WeakHelper &a, const WeakHelper &b)
+{
+    return a.feature < b.feature;
+}
 
 class FaceDetector
 {
@@ -69,7 +75,6 @@ public:
 
         for (int t = 0; t < _weakClassifiers; t++)
         {
-            printf("2");
             // normalize(weights); // NORM
             vector<WeakClassifier> weakClassifiers = trainWeak(X, y, features, weights);
             tuple<WeakClassifier, double, vector<double>> best = selectBest(weakClassifiers, weights, trainingData);
@@ -162,26 +167,31 @@ public:
         return features;
     }
 
+    void ffeature()
+    {
+    }
+
     pair<vector<vector<int>>, vector<int>> applyFeatures(vector<vector<RectangleRegion>> &features, vector<pair<IntegralImage, int>> &trainingData)
     {
         int trainSize = trainingData.size();
-        vector<vector<int>> X(features.size(), vector<int>(trainSize));
+        vector<vector<int>> X(features.size(), vector<int>(trainSize, 0));
         vector<int> y = vector<int>(trainSize);
 
         for (int i = 0; i < trainSize; i++)
             y[i] = trainingData[i].second;
 
-        int i = 0;
-        long int tmp = 0L;
-        for (vector<RectangleRegion> f : features)
-        {
-            tmp = 0L;
-            for (pair<IntegralImage, int> td : trainingData)
-                for (RectangleRegion rr : f)
-                    if (rr.isDummy() == false)
-                        tmp += td.first.getArea(rr);
+        int tmp = 0;
 
-            X[i++].push_back(tmp);
+        for (int i = 0; i < features.size(); i++)
+        {
+            // 0 - 1 positive 2 - 4 negative
+            for (int j = 0; j < trainSize; j++)
+            {
+                tmp = 0;
+                for (int k = 0; k < features[i].size(); k++)
+                    tmp += (trainingData[j].first.getArea(features[i][k]) * (k <= 1 ? 1 : -1));
+                X[i][j] = tmp;
+            }
         }
 
         return make_pair(X, y);
@@ -202,30 +212,32 @@ public:
 
         vector<WeakClassifier> classifiers;
         int totalFeatures = X.size();
+
         for (int i = 0; i < X.size(); i++)
         {
             if (classifiers.size() % 1000 == 0 && classifiers.size() > 0)
             {
-                printf("Trained %d classifiers ", classifiers.size());
+                printf("Trained %d classifiers \n", classifiers.size());
             }
 
-            // Sort appliedFeature
             vector<WeakHelper> appliedFeature;
-            for (int j = 0; j < weights.size(); j++)
+            for (int j = 0; j < X[i].size(); j++)
             {
                 appliedFeature.push_back(WeakHelper());
-                appliedFeature[i].weight = weights[i];
-                appliedFeature[i].feature = X[i];
-                appliedFeature[i].y = y[i];
+                appliedFeature[j].weight = weights[j];
+                appliedFeature[j].feature = X[i][j];
+                appliedFeature[j].y = y[j];
             }
+
+            sort(appliedFeature.begin(), appliedFeature.end(), compareByFeature);
 
             int posSeen = 0, negSeen = 0;
             double posWeights = 0.0, negWeights = 0.0;
             double minError = DBL_MAX, bestPolarity = 0.0, error = 0.0;
-            vector<int> bestThreshold;
+            int bestThreshold = 0.0;
             vector<RectangleRegion> bestFeature;
 
-            for (auto wh : appliedFeature)
+            for (WeakHelper wh : appliedFeature)
             {
                 error = min(negWeights + totalPos - posWeights, posWeights + totalNeg - negWeights);
                 if (error < minError)
@@ -247,6 +259,9 @@ public:
                     negWeights += wh.weight;
                 }
             }
+
+            WeakClassifier wk = WeakClassifier(&bestFeature, bestThreshold, bestPolarity);
+            classifiers.push_back(wk);
         }
 
         return classifiers;
@@ -270,27 +285,27 @@ public:
     //     return sqrt(ans);
     // }
 
-    tuple<WeakClassifier, double, vector<double>> selectBest(vector<WeakClassifier> classifiers, vector<double> weights, vector<pair<IntegralImage, int>> trainingData)
+    tuple<WeakClassifier, double, vector<double>> selectBest(vector<WeakClassifier> &classifiers, vector<double> &weights, vector<pair<IntegralImage, int>> &trainingData)
     {
         double bestError, error, correctness;
         vector<double> bestAccuracy;
         bestError = error = correctness = 0.0;
-
         WeakClassifier bestClf = classifiers[0];
-
         vector<double> accuracy;
         for (WeakClassifier clf : classifiers)
         {
             correctness = error = 0.0;
             accuracy.clear();
 
-            for (int i = 0; i < weights.size(); i++)
+            for (int i = 0; i < trainingData.size(); i++)
             {
                 correctness = abs(clf.classify(trainingData[i].first) - weights[i]);
                 accuracy.push_back(correctness);
                 error += correctness;
             }
+
             error /= trainingData.size();
+
             if (error < bestError)
             {
                 bestClf = clf;

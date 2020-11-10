@@ -38,6 +38,9 @@ public:
 
     long int getArea(pair<int, int> topLeft, pair<int, int> bottomRight)
     {
+        if (topLeft.first == -1 && topLeft.second == -1 && bottomRight.first == -1 && bottomRight.second == -1)
+            return 0;
+
         if (topLeft.first < 0 || topLeft.second < 0 || bottomRight.first < 0 || bottomRight.second < 0 ||
             topLeft.first >= _size || topLeft.second >= _size || bottomRight.first >= _size || bottomRight.second >= _size)
         {
