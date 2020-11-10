@@ -1,6 +1,6 @@
 #include <array>
 #include <vector>
-#include <math.h>
+#include <cmath>
 #include <tuple>
 #include <float.h>
 #include <algorithm>
@@ -85,7 +85,6 @@ public:
             WeakClassifier bestClf = get<0>(best);
             double bestError = get<1>(best);
             vector<double> bestAccuracy = get<2>(best);
-
             double beta = bestError / (1.0 / bestError);
             for (int i = 0; i < bestAccuracy.size(); i++)
             {
@@ -134,7 +133,7 @@ public:
                             tmp[1] = dummy;
                             tmp[0] = RectangleRegion(i + w, j, w, h);
                             tmp[2] = RectangleRegion(i + 2 * w, j, w, h);
-                           tmp[3] = current;
+                            tmp[3] = current;
                             features.push_back(tmp);
                         }
 
@@ -294,18 +293,18 @@ public:
         {
             correctness = error = 0.0;
             vector<double> accuracy;
+            double w;
 
             for (int i = 0; i < trainingData.size(); i++)
             {
                 int prediction = clf.classify(trainingData[i].first);
-
-                correctness = abs(prediction - trainingData[i].second);
-
+                correctness = abs((prediction)-trainingData[i].second);
+                error += (correctness * weights[i]);
                 accuracy.push_back(correctness);
-                error += correctness * weights[i];
+                w = weights[i];
             }
 
-            error /= trainingData.size();
+            error = error / (trainingData.size() * 1.0);
 
             if (error < bestError)
             {
