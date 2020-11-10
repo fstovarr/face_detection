@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
 {
     vector<pair<Image, int>> trainingData;
 
-    int n = 100;
+    int n = 5000;
 
     int positiveSamples = loadSamples("./img/train/face/", &trainingData, 1, n);
 

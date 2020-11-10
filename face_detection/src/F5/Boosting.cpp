@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <fstream>
+#include <random>
 #include "Features.cpp"
 #include "Metrics.cpp"
 #include "../Image.cpp"
@@ -190,6 +191,10 @@ TrainingResult buildWeakClassifiers(
     string prefix, int num_features, vector<matrix> xis, vector<int> ys, vector<Feature> features, vector<float> ws
   )
 {
+  mt19937_64 rng;
+  rng.seed(42);
+  uniform_real_distribution<double> unif(0, 1);
+
   // initialize weights
   if (ws.empty()) {
     int m = 0, l = 0;
@@ -229,10 +234,8 @@ TrainingResult buildWeakClassifiers(
       status_counter -= 1;
       improved = false;
 
-      //if (KEEP_PROBABILITY < .1) {
-        float skip_probability = rand();
-        if (skip_probability > KEEP_PROBABILITY) continue;
-      //}
+      double skip_probability = unif(rng);
+      if (skip_probability > KEEP_PROBABILITY) continue;
 
       ClassifierResult result = applyFeature(features[i], xis, ys, ws);
       if (result.classification_error < best.classification_error) {
@@ -243,8 +246,8 @@ TrainingResult buildWeakClassifiers(
       // Print status every couple of iterations
       if (improved || status_counter == 0) {
         auto stop = chrono::high_resolution_clock::now();
-        chrono::duration<float, milli> duration = stop - start; 
-        chrono::duration<float, milli> total_duration = stop - start; 
+        auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
+        auto total_duration = chrono::duration_cast<chrono::duration<double>>(stop - total_start);
         status_counter = STATUS_EVERY;
         if (improved) {
           cout << f_i + 1 << "/" << num_features << " (" << total_duration.count() << ")s " << " (" << duration.count() << "s in this stage)" << " "
@@ -328,6 +331,7 @@ void trainF5(vector<pair<Image, int>> trainingData) {
   int window_size = X[0].size();
   vector<Feature> features = getFeatures(window_size - 1);
   cout << "Using " << features.size() << " features\n";
+  cout << "Using " << N << " train samples\n";
 
   vector<float> ws;
 
@@ -336,7 +340,7 @@ void trainF5(vector<pair<Image, int>> trainingData) {
   string prefix = "f1";
   int num_features = 2;
 
-  bool train = false;
+  bool train = true;
   if (train) {
     TrainingResult tr = buildWeakClassifiers(prefix, num_features, X, y, features, ws);
     weak_classifiers = tr.first;
