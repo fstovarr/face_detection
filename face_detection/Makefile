@@ -1,5 +1,6 @@
 CC=g++
 FLAGS=
+CXXFLAGS =-std=c++0x
 
 IMG_FOLDER=img
 
