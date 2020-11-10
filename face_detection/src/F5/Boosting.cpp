@@ -17,7 +17,7 @@
 using json = nlohmann::json;
 
 
-vector<float> normalizeWeights(vector<float> v) {
+vector<float> normalizeWeights(vector<float> & v) {
   float S = 0.0;
   for (float x : v) S += x;
   for (size_t i = 0; i < v.size(); ++i) {
@@ -49,9 +49,8 @@ struct WeakClassifierF5 {
   float alpha;
   Feature f;
 
-
   template <typename T>
-  float operator() (vector<vector<T>> x) {
+  float operator() (vector<vector<T>> const & x) const {
     float theta = threshold;
     return (sign((polarity * theta) - (polarity * f(x))) + 1) / 2;
   }
@@ -94,10 +93,11 @@ struct RunningSums {
   vector<float> s_minuses, s_pluses;
 };
 
-RunningSums buildRunningSums(vector<int> ys, vector<float> ws) {
+RunningSums buildRunningSums(vector<int> const & ys, vector<float> const & ws) {
+  size_t N = ys.size();
   float s_minus = 0, s_plus = 0;
   float t_minus = 0, t_plus = 0;
-  vector<float> s_minuses, s_pluses;
+  vector<float> s_minuses(N), s_pluses(N);
 
   for (size_t i = 0; i < ys.size(); ++i) {
     float y = ys[i], w = ws[i];
@@ -108,13 +108,13 @@ RunningSums buildRunningSums(vector<int> ys, vector<float> ws) {
       s_plus += w;
       t_plus += w;
     }
-    s_minuses.push_back(s_minus);
-    s_pluses.push_back(s_plus);
+    s_minuses[i] = s_minus;
+    s_pluses[i] = s_plus;
   }
   return RunningSums{t_minus, t_plus, s_minuses, s_pluses};
 }
 
-ThresholdPolarity find_best_threshold(vector<float> zs, RunningSums rs) {
+ThresholdPolarity find_best_threshold(vector<float> const & zs, RunningSums const & rs) {
   float min_e = numeric_limits<float>::max();
   float min_z = 0;
   int polarity = 0;
@@ -139,35 +139,37 @@ ThresholdPolarity find_best_threshold(vector<float> zs, RunningSums rs) {
 }
 
 typedef pair<pair<float, float>, float> f3;
-bool cmp(f3 lh, f3 rh) { return lh.second < rh.second; }
+bool cmp(f3 const & lh, f3 const & rh) { return lh.second < rh.second; }
 
-ThresholdPolarity determineThresholdPolarity(vector<int> ys, vector<float> ws, vector<float> zs) {
+ThresholdPolarity determineThresholdPolarity(vector<int> const & ys, vector<float> const & ws, vector<float> const & zs) {
+  size_t N = ys.size();
   // sort according to zs
-  vector<f3> triplet(ys.size());
+  vector<f3> triplet(N);
   for (size_t i = 0; i < ys.size(); ++i) triplet[i] = {{ys[i], ws[i]}, zs[i]};
 
   sort(triplet.begin(), triplet.end(), cmp);
+
+  vector<int> ys_sorted(N);
+  vector<float> ws_sorted(N), zs_sorted(N);
   for (size_t i = 0; i < ys.size(); ++i) {
     float y = triplet[i].first.first, w = triplet[i].first.second;
-    ys[i] = y;
-    ws[i] = w;
+    ys_sorted[i] = y;
+    ws_sorted[i] = w;
+    zs_sorted[i] = triplet[i].second;
   }
 
-  RunningSums rs = buildRunningSums(ys, ws);
+  RunningSums rs = buildRunningSums(ys_sorted, ws_sorted);
 
-  return find_best_threshold(zs, rs);
+  return find_best_threshold(zs_sorted, rs);
 }
 
 typedef vector<vector<int>> matrix;
 
-ClassifierResult applyFeature(Feature f, vector<matrix> xis, vector<int> ys, vector<float> ws) {
-
+ClassifierResult applyFeature(Feature const & f, vector<matrix> const & xis, vector<int> const & ys, vector<float> const & ws) {
   // determine all feature values
   vector<float> zs(xis.size());
-  #pragma omp parallel for if(USE_OMP)
-  for (size_t i = 0; i < xis.size(); ++i) {
+  for (size_t i = 0; i < xis.size(); ++i)
     zs[i] = f(xis[i]);
-  }
 
   // determine best threshold
   ThresholdPolarity result = determineThresholdPolarity(ys, ws, zs);
@@ -188,7 +190,7 @@ const float KEEP_PROBABILITY = 1./4.;
 
 typedef pair<vector<WeakClassifierF5>, vector<float>> TrainingResult;
 TrainingResult buildWeakClassifiers(
-    string prefix, int num_features, vector<matrix> xis, vector<int> ys, vector<Feature> features, vector<float> ws
+    string prefix, int num_features, vector<matrix> const & xis, vector<int> ys, vector<Feature> const & features, vector<float> & ws
   )
 {
   mt19937_64 rng;
@@ -235,7 +237,17 @@ TrainingResult buildWeakClassifiers(
       improved = false;
 
       double skip_probability = unif(rng);
-      if (skip_probability > KEEP_PROBABILITY) continue;
+      if (skip_probability > KEEP_PROBABILITY) {
+        if (status_counter == 0) {
+          auto stop = chrono::high_resolution_clock::now();
+          auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
+          auto total_duration = chrono::duration_cast<chrono::duration<double>>(stop - total_start);
+          status_counter = STATUS_EVERY;
+          cout << f_i + 1 << "/" << num_features << " (" << total_duration.count() << ")s " << " (" << duration.count() << "s in this stage)" << " "
+            << 100. * i / features.size() << "% evaluated " << "...\n";
+        }
+        continue;
+      }
 
       ClassifierResult result = applyFeature(features[i], xis, ys, ws);
       if (result.classification_error < best.classification_error) {
@@ -283,7 +295,7 @@ TrainingResult buildWeakClassifiers(
   return {weak_classifiers, ws};
 }
 
-void writeWeakClassifiers(string prefix, vector<WeakClassifierF5> clf_s) {
+void writeWeakClassifiers(string prefix, vector<WeakClassifierF5> const & clf_s) {
   ofstream o(prefix + "clf_s.jsonl");
   for (auto clf : clf_s) {
     o << clf.to_json() << "\n";
@@ -318,7 +330,7 @@ vector<WeakClassifierF5> readWeakClassifiers(string prefix, int num_features) {
 }
 
 
-void trainF5(vector<pair<Image, int>> trainingData) {
+void trainF5(vector<pair<Image, int>> const & trainingData) {
   size_t N = trainingData.size();
   vector<matrix> X(N);
   vector<int> y(N);
@@ -354,7 +366,7 @@ void trainF5(vector<pair<Image, int>> trainingData) {
   cout << weak_classifiers[0] << "\n";
   cout << weak_classifiers[1] << "\n";
   vector<int> y_pred(N);
-  for (int i = 0; i < N; ++i) {
+  for (size_t i = 0; i < N; ++i) {
     y_pred[i] = strongClassifier(X[i], weak_classifiers);
   }
 

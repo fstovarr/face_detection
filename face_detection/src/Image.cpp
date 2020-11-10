@@ -21,7 +21,7 @@ public:
         return _image;
     }
 
-    vector<vector<int>> getIntImage() {
+    vector<vector<int>> getIntImage() const {
       vector<vector<int>> m(_size, vector<int>(_size));
       for (int i = 0; i < _size; ++i) {
         for (int j = 0; j < _size; ++j) {

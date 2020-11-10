@@ -37,7 +37,7 @@ ostream& operator << (ostream& os, const vector<vector<T>>& v) {
 }
 
 template <typename T>
-T coordSum(vector<int> coords_x, vector<int> coords_y, vector<int> coeffs, vector<vector<T>> const& ii) {
+T coordSum(vector<int> const & coords_x, vector<int> const & coords_y, vector<int> const & coeffs, vector<vector<T>> const& ii) {
   T sum = 0;
   int x, y;
 
@@ -59,7 +59,7 @@ struct Box {
   }
 
   template <typename T>
-  T operator() (vector<vector<T>> ii) {
+  T operator() (vector<vector<T>> const & ii) const {
     return coordSum(coords_x, coords_y, coeffs, ii);
   }
 
@@ -75,7 +75,7 @@ class Feature {
     Feature(int x, int y, int width, int height, vector<int> coords_x, vector<int> coords_y, vector<int> coeffs, string type) : x(x), y(y), width(width), height(height), coords_x(coords_x), coords_y(coords_y), coeffs(coeffs), type(type) {} ;
 
     template <typename T>
-    T operator() (vector<vector<T>> ii) {
+    T operator() (vector<vector<T>> const & ii) const {
       return coordSum(coords_x, coords_y, coeffs, ii);
     }
 
