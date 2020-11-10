@@ -79,12 +79,8 @@ int main(int argc, char *argv[])
     vector<pair<Image, int>> trainingData;
 
     int positiveSamples = loadSamples("./img/train/face/", &trainingData, 1, 1);
-    cout << "OUT " << positiveSamples << endl;
 
     int negativeSamples = loadSamples("./img/train/non-face/", &trainingData, 0, 1);
-    cout << "OUT " << positiveSamples << endl;
-
-    cout << trainingData.size() << " <----------" << endl;
 
     FaceDetector fd = FaceDetector(10);
     fd.train(trainingData, positiveSamples, negativeSamples);
