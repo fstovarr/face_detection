@@ -1,5 +1,6 @@
 #include <array>
 #include <vector>
+
 #include "RectangleRegion.cpp"
 #include "Image.cpp"
 
@@ -18,7 +19,7 @@ class IntegralImage
     }
 
 public:
-    IntegralImage(Image image, int size)
+    IntegralImage(Image image)
     {
         Constructor(image.getImage(), image.getSize());
     }
@@ -28,9 +29,9 @@ public:
         Constructor(image, size);
     }
 
-    vector<long int>& operator[] (size_t i) { return _integral[i]; };
+    vector<long int> &operator[](size_t i) { return _integral[i]; };
 
-    long int getArea(RectangleRegion rr)
+    long int getArea(RectangleRegion &rr)
     {
         return getArea(rr.getTopLeft(), rr.getBottomRight());
     }
@@ -39,7 +40,10 @@ public:
     {
         if (topLeft.first < 0 || topLeft.second < 0 || bottomRight.first < 0 || bottomRight.second < 0 ||
             topLeft.first >= _size || topLeft.second >= _size || bottomRight.first >= _size || bottomRight.second >= _size)
+        {
+            cout << "Out of bounds" << endl;
             throw "Out of bounds";
+        }
 
         pair<int, int> bottomLeft = make_pair(bottomRight.first - 1, topLeft.second - 1);
 

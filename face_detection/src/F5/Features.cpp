@@ -5,6 +5,7 @@
 #include <string>
 #include <assert.h>
 #include "Locations.cpp"
+#include "Boosting.cpp"
 
 using namespace std;
 
@@ -174,9 +175,6 @@ vector<Feature> getFeatures(int window_size=24) {
   }
 
   return features;
-}
-
-vector<vector<int>> applyFeaturesF5(vector<Feature> features, vector<Image> images) {
 }
 
 

@@ -1,3 +1,5 @@
+#ifndef IMAGE_H
+#define IMAGE_H
 #include <vector>
 
 using namespace std;
@@ -19,8 +21,21 @@ public:
         return _image;
     }
 
+    vector<vector<int>> getIntImage() {
+      vector<vector<int>> m(_size, vector<int>(_size));
+      for (int i = 0; i < _size; ++i) {
+        for (int j = 0; j < _size; ++j) {
+          m[i][j] = _image[i][j];
+        }
+      }
+      return m;
+    }
+
     int getSize()
     {
         return _size;
     }
 };
+
+
+#endif

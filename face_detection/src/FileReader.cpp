@@ -41,7 +41,7 @@ public:
         return _files.end() - _currentFile;
     }
 
-    int getSample(vector<vector<unsigned char>> *array)
+    int getSample(vector<vector<unsigned char>> *array, bool initArray)
     {
         ifstream infile(*_currentFile);
         if (!infile.good())
@@ -69,10 +69,14 @@ public:
             for (col = 0; col < numcols; ++col)
             {
                 ss >> tmp;
-                tmpVec.push_back(tmp);
+                if (!initArray)
+                    (*array)[row][col] = tmp;
+                else
+                    tmpVec.push_back(tmp);
             }
 
-            (*array).push_back(tmpVec);
+            if (initArray)
+                (*array).push_back(tmpVec);
         }
 
         infile.close();
