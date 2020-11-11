@@ -1,3 +1,3 @@
 #!/bin/sh
-make
+make -f Makefile.old
 ./bin/main
