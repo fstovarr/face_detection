@@ -9,7 +9,7 @@
 #include <fstream>
 #include <random>
 #include <sys/time.h>
-// #include <omp.h>
+#include <omp.h>
 
 #include "Features.cpp"
 #include "Metrics.cpp"
@@ -116,10 +116,13 @@ void applyFeatures(vector<vector<T>> const &x, vector<Feature> &features, vector
   int *d_res;
   CHECK(cudaMalloc((void **)&d_res, N_FEATURES * sizeof(int)));
 
-  if(cuda._auto) {
+  if (cuda._auto)
+  {
     threadsPerBlock = MIN(cuda.coresPerMP, N_FEATURES);
     blocksPerGrid = floor(N_FEATURES / threadsPerBlock) + 1;
-  } else {
+  }
+  else
+  {
     threadsPerBlock = MIN(cuda.coresPerMP, cuda.threads);
     blocksPerGrid = floor(N_FEATURES / threadsPerBlock) + 1;
     cuda.blocks = blocksPerGrid;
@@ -146,14 +149,15 @@ template <typename T>
 void applyFeatures(vector<vector<T>> const &x, vector<Feature> const &features, vector<int> &z, RunningType &rt, bool use_omp)
 {
   size_t n_features = features.size();
-  
-  int threads = 16;
 
-  if(rt._auto == false) {
+  int threads = omp_get_num_threads();
+
+  if (rt._auto == false)
+  {
     threads = rt.threads;
   }
 
-#pragma omp parallel for num_threads(threads) if(use_omp)
+#pragma omp parallel for num_threads(threads) if (use_omp)
   for (size_t i = 0; i < n_features; ++i)
   {
     z[i] = features[i](x);
@@ -408,10 +412,10 @@ TrainingResult buildWeakClassifiers(
 
   struct timeval after, before, result;
   gettimeofday(&before, NULL);
-  
+
   for (size_t i = 0; i < xis.size(); ++i)
   {
-    if(verbose && i % 1000 == 0)
+    if (verbose && i % 1000 == 0)
     {
       cout << i << "\n";
     }
@@ -420,7 +424,6 @@ TrainingResult buildWeakClassifiers(
       applyFeatures(xis[i], features, z, runningType);
     else
       applyFeatures(xis[i], features, z, runningType, (*(runningType.type) == 'O'));
-
 
     for (size_t j = 0; j < features.size(); ++j)
     {
@@ -435,7 +438,7 @@ TrainingResult buildWeakClassifiers(
   auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
   avgTime += duration.count();
 
-  cout << (long int) result.tv_sec << "." << (long int) result.tv_usec << "," << avgTime << "," << runningType.threads << "," << runningType.blocks << "," << runningType.coresPerMP << "," << runningType.multiProcessors << "\n";
+  cout << (long int)result.tv_sec << "." << (long int)result.tv_usec << "," << avgTime << "," << runningType.threads << "," << runningType.blocks << "," << runningType.coresPerMP << "," << runningType.multiProcessors << "\n";
 
   auto total_start = chrono::high_resolution_clock::now();
 
@@ -589,7 +592,8 @@ void trainF5(vector<pair<Image, int>> const &trainingData, RunningType &cuda, bo
 
   int window_size = X[0].size();
   vector<Feature> features = getFeatures(window_size - 1);
-  if(verbose) {
+  if (verbose)
+  {
     cout << "Using " << features.size() << " features\n";
     cout << "Using " << N << " train samples\n";
   }
@@ -612,8 +616,9 @@ void trainF5(vector<pair<Image, int>> const &trainingData, RunningType &cuda, bo
   {
     weak_classifiers = readWeakClassifiers(prefix, num_features);
   }
-  
-  if(verbose) {
+
+  if (verbose)
+  {
     cout << weak_classifiers[0] << "\n";
     cout << weak_classifiers[1] << "\n";
   }
@@ -624,7 +629,7 @@ void trainF5(vector<pair<Image, int>> const &trainingData, RunningType &cuda, bo
     y_pred[i] = strongClassifier(X[i], weak_classifiers);
   }
 
-  if(verbose)
+  if (verbose)
     cout << "Evaluating \n";
 
   evaluate(y, y_pred);
