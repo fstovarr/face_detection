@@ -65,7 +65,6 @@ struct Box {
 
 };
 
-
 class Feature {
   protected:
     int x, y, width, height;
@@ -86,6 +85,9 @@ class Feature {
     int getY() { return y; }
     int getWidth() { return width; }
     int getHeight() { return height; }
+    vector<int> getCoordsX() { return coords_x; }
+    vector<int> getCoordsY() { return coords_y; }
+    vector<int> getCoefs() { return coeffs; }
 };
 
 ostream& operator<<(ostream& os, const Feature& ft) {
