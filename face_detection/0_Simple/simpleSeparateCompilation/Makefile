@@ -216,7 +216,7 @@ ifneq ($(TARGET_ARCH),$(HOST_ARCH))
         ifdef TARGET_OVERRIDE
             LDFLAGS += -lslog2
         endif
-
+        NVCCFLAGS += -arbin $(QNX_HOST)/usr/bin/aarch64-unknown-nto-qnx7.0.0-ar
         ifneq ($(TARGET_FS),)
             LDFLAGS += -L$(TARGET_FS)/usr/lib
             CCFLAGS += "-Wl\,-rpath-link\,$(TARGET_FS)/usr/lib"
@@ -272,7 +272,7 @@ ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
 # Common includes and paths for CUDA
-INCLUDES  := -I./lib/common/inc
+INCLUDES  := -I../../common/inc
 LIBRARIES :=
 
 ################################################################################
@@ -296,6 +296,8 @@ GENCODE_FLAGS += -gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM)
 endif
 endif
 
+ALL_CCFLAGS += -dc
+
 ifeq ($(SAMPLE_ENABLED),0)
 EXEC ?= @echo "[@]"
 endif
@@ -303,12 +305,9 @@ endif
 ################################################################################
 
 # Target rules
-all: prepare build clean
+all: build
 
-build: violajones
-
-prepare:
-	-@mkdir bin/
+build: simpleSeparateCompilation
 
 check.deps:
 ifeq ($(SAMPLE_ENABLED),0)
@@ -317,17 +316,25 @@ else
 	@echo "Sample is ready - all dependencies have been met"
 endif
 
-violajones.o:cuda/violajones.cu
+simpleDeviceLibrary.o:simpleDeviceLibrary.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-violajones: violajones.o
+simpleSeparateCompilation.o:simpleSeparateCompilation.cu
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+
+simpleDeviceLibrary.a:simpleDeviceLibrary.o
+	$(EXEC) $(NVCC) $(ALL_LDFLAGS) -lib -o $@ $< $(LIBRARIES)
+
+simpleSeparateCompilation: simpleDeviceLibrary.a simpleSeparateCompilation.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
-	$(EXEC) mv $@ ./bin/
+	$(EXEC) mkdir -p ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
+	$(EXEC) cp $@ ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
 
 run: build
-	$(EXEC) ./violajones
+	$(EXEC) ./simpleSeparateCompilation
 
 clean:
-	rm -f violajones.o
+	rm -f simpleSeparateCompilation simpleDeviceLibrary.o simpleSeparateCompilation.o simpleDeviceLibrary.a
+	rm -rf ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/simpleSeparateCompilation
 
 clobber: clean

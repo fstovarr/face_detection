@@ -264,7 +264,33 @@ ALL_CCFLAGS += $(EXTRA_NVCCFLAGS)
 ALL_CCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))
 ALL_CCFLAGS += $(addprefix -Xcompiler ,$(EXTRA_CCFLAGS))
 
+UBUNTU = $(shell lsb_release -i -s 2>/dev/null | grep -i ubuntu)
+
 SAMPLE_ENABLED := 1
+
+# This sample is not supported on Mac OSX
+ifeq ($(TARGET_OS),darwin)
+  $(info >>> WARNING - memMapIPCDrv is not supported on Mac OSX - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
+# This sample is not supported on ARMv7
+ifeq ($(TARGET_ARCH),armv7l)
+  $(info >>> WARNING - memMapIPCDrv is not supported on ARMv7 - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
+# This sample is not supported on aarch64
+ifeq ($(TARGET_ARCH),aarch64)
+  $(info >>> WARNING - memMapIPCDrv is not supported on aarch64 - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
+# This sample is not supported on sbsa
+ifeq ($(TARGET_ARCH),sbsa)
+  $(info >>> WARNING - memMapIPCDrv is not supported on sbsa - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
 
 ALL_LDFLAGS :=
 ALL_LDFLAGS += $(ALL_CCFLAGS)
@@ -272,28 +298,87 @@ ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
 # Common includes and paths for CUDA
-INCLUDES  := -I./lib/common/inc
+INCLUDES  := -I../../common/inc
 LIBRARIES :=
 
 ################################################################################
 
-# Gencode arguments
-SMS ?= 35 37 50 52 60 61 70 75 80 86
+FATBIN_FILE := memMapIpc_kernel${TARGET_SIZE}.fatbin
 
-ifeq ($(SMS),)
-$(info >>> WARNING - no SM architectures have been specified - waiving sample <<<)
-SAMPLE_ENABLED := 0
-endif
+# Gencode arguments
+SMS ?=
 
 ifeq ($(GENCODE_FLAGS),)
 # Generate SASS code for each SM architecture listed in $(SMS)
 $(foreach sm,$(SMS),$(eval GENCODE_FLAGS += -gencode arch=compute_$(sm),code=sm_$(sm)))
+
+ifeq ($(SMS),)
+# Generate PTX code from SM 35
+GENCODE_FLAGS += -gencode arch=compute_35,code=compute_35
+endif
 
 # Generate PTX code from the highest SM architecture in $(SMS) to guarantee forward-compatibility
 HIGHEST_SM := $(lastword $(sort $(SMS)))
 ifneq ($(HIGHEST_SM),)
 GENCODE_FLAGS += -gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM)
 endif
+endif
+
+ifeq ($(TARGET_OS),darwin)
+  ALL_LDFLAGS += -Xcompiler -F/Library/Frameworks -Xlinker -framework -Xlinker CUDA
+else
+  ifeq ($(TARGET_ARCH),x86_64)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/lib64/stubs
+    CUDA_SEARCH_PATH += $(CUDA_PATH)/targets/x86_64-linux/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),armv7l-linux)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/armv7-linux-gnueabihf/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),aarch64-linux)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/aarch64-linux/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),sbsa-linux)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/sbsa-linux/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),armv7l-android)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/armv7-linux-androideabi/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),aarch64-android)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/aarch64-linux-androideabi/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),armv7l-qnx)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/ARMv7-linux-QNX/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),aarch64-qnx)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/aarch64-qnx/lib/stubs
+    ifdef TARGET_OVERRIDE
+        CUDA_SEARCH_PATH := $(CUDA_PATH)/targets/$(TARGET_OVERRIDE)/lib/stubs
+    endif
+  endif
+
+  ifeq ($(TARGET_ARCH),ppc64le)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/ppc64le-linux/lib/stubs
+  endif
+
+  ifeq ($(HOST_ARCH),ppc64le)
+    CUDA_SEARCH_PATH += $(CUDA_PATH)/lib64/stubs
+  endif
+
+  CUDALIB ?= $(shell find -L $(CUDA_SEARCH_PATH) -maxdepth 1 -name libcuda.so 2> /dev/null)
+  ifeq ("$(CUDALIB)","")
+    $(info >>> WARNING - libcuda.so not found, CUDA Driver is not installed.  Please re-install the driver. <<<)
+    SAMPLE_ENABLED := 0
+  else
+    CUDALIB := $(shell echo $(CUDALIB) | sed "s/ .*//" | sed "s/\/libcuda.so//" )
+    LIBRARIES += -L$(CUDALIB) -lcuda
+  endif
 endif
 
 ifeq ($(SAMPLE_ENABLED),0)
@@ -303,12 +388,9 @@ endif
 ################################################################################
 
 # Target rules
-all: prepare build clean
+all: build
 
-build: violajones
-
-prepare:
-	-@mkdir bin/
+build: memMapIPCDrv $(FATBIN_FILE)
 
 check.deps:
 ifeq ($(SAMPLE_ENABLED),0)
@@ -317,17 +399,31 @@ else
 	@echo "Sample is ready - all dependencies have been met"
 endif
 
-violajones.o:cuda/violajones.cu
+$(FATBIN_FILE): memMapIpc_kernel.cu
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -fatbin $<
+	$(EXEC) mkdir -p data
+	$(EXEC) cp -f $@ ./data
+	$(EXEC) mkdir -p ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
+	$(EXEC) cp -f $@ ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
+
+helper_multiprocess.o:../../common/src/helper_multiprocess.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-violajones: violajones.o
+memMapIpc.o:memMapIpc.cpp
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+
+memMapIPCDrv: helper_multiprocess.o memMapIpc.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
-	$(EXEC) mv $@ ./bin/
+	$(EXEC) mkdir -p ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
+	$(EXEC) cp $@ ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
 
 run: build
-	$(EXEC) ./violajones
+	$(EXEC) ./memMapIPCDrv
 
 clean:
-	rm -f violajones.o
+	rm -f memMapIPCDrv helper_multiprocess.o memMapIpc.o  data/$(FATBIN_FILE) $(FATBIN_FILE)
+	rm -rf ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/memMapIPCDrv
+
+	rm -rf ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/$(FATBIN_FILE)
 
 clobber: clean

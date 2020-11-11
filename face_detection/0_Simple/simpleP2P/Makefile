@@ -266,13 +266,37 @@ ALL_CCFLAGS += $(addprefix -Xcompiler ,$(EXTRA_CCFLAGS))
 
 SAMPLE_ENABLED := 1
 
+# This sample is not supported on Mac OSX
+ifeq ($(TARGET_OS),darwin)
+  $(info >>> WARNING - simpleP2P is not supported on Mac OSX - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
+# This sample is not supported on ARMv7
+ifeq ($(TARGET_ARCH),armv7l)
+  $(info >>> WARNING - simpleP2P is not supported on ARMv7 - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
+# This sample is not supported on aarch64
+ifeq ($(TARGET_ARCH),aarch64)
+  $(info >>> WARNING - simpleP2P is not supported on aarch64 - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
+# This sample is not supported on sbsa
+ifeq ($(TARGET_ARCH),sbsa)
+  $(info >>> WARNING - simpleP2P is not supported on sbsa - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
 ALL_LDFLAGS :=
 ALL_LDFLAGS += $(ALL_CCFLAGS)
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
 # Common includes and paths for CUDA
-INCLUDES  := -I./lib/common/inc
+INCLUDES  := -I../../common/inc
 LIBRARIES :=
 
 ################################################################################
@@ -303,12 +327,9 @@ endif
 ################################################################################
 
 # Target rules
-all: prepare build clean
+all: build
 
-build: violajones
-
-prepare:
-	-@mkdir bin/
+build: simpleP2P
 
 check.deps:
 ifeq ($(SAMPLE_ENABLED),0)
@@ -317,17 +338,19 @@ else
 	@echo "Sample is ready - all dependencies have been met"
 endif
 
-violajones.o:cuda/violajones.cu
+simpleP2P.o:simpleP2P.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-violajones: violajones.o
+simpleP2P: simpleP2P.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
-	$(EXEC) mv $@ ./bin/
+	$(EXEC) mkdir -p ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
+	$(EXEC) cp $@ ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
 
 run: build
-	$(EXEC) ./violajones
+	$(EXEC) ./simpleP2P
 
 clean:
-	rm -f violajones.o
+	rm -f simpleP2P simpleP2P.o
+	rm -rf ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/simpleP2P
 
 clobber: clean

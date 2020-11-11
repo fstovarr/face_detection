@@ -252,7 +252,8 @@ endif
 
 # Debug build flags
 ifeq ($(dbg),1)
-      NVCCFLAGS += -g -G
+      NVCCFLAGS += -G
+      CCFLAGS += -g
       BUILD_TYPE := debug
 else
       BUILD_TYPE := release
@@ -266,16 +267,59 @@ ALL_CCFLAGS += $(addprefix -Xcompiler ,$(EXTRA_CCFLAGS))
 
 SAMPLE_ENABLED := 1
 
+# This sample is not supported on QNX
+ifeq ($(TARGET_OS),qnx)
+  $(info >>> WARNING - simpleMPI is not supported on QNX - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
 ALL_LDFLAGS :=
 ALL_LDFLAGS += $(ALL_CCFLAGS)
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
+MPI_CCFLAGS :=
+MPI_CCFLAGS += $(CCFLAGS)
+MPI_CCFLAGS += $(EXTRA_CCFLAGS)
+
+MPI_LDFLAGS :=
+MPI_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
+MPI_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
+
 # Common includes and paths for CUDA
-INCLUDES  := -I./lib/common/inc
+INCLUDES  := -I../../common/inc
 LIBRARIES :=
 
 ################################################################################
+
+# MPI check and binaries
+MPICXX ?= $(shell which mpicxx 2>/dev/null)
+
+ifneq ($(TARGET_ARCH),$(HOST_ARCH))
+      $(info -----------------------------------------------------------------------------------------------)
+      $(info WARNING - Cross Compilation not supported for MPI Samples.)
+      $(info -----------------------------------------------------------------------------------------------)
+      $(info   Waiving the build )
+      $(info   This will be a dry-run of the Makefile.)
+      $(info   For more information on how to set up your environment to build and run this )
+      $(info   sample, please refer the CUDA Samples documentation and release notes)
+      $(info -----------------------------------------------------------------------------------------------)
+      MPICXX=mpicxx
+      SAMPLE_ENABLED := 0
+endif
+
+ifeq ($(MPICXX),)
+      $(info -----------------------------------------------------------------------------------------------)
+      $(info WARNING - No MPI compiler found.)
+      $(info -----------------------------------------------------------------------------------------------)
+      $(info   CUDA Sample "simpleMPI" cannot be built without an MPI Compiler.)
+      $(info   This will be a dry-run of the Makefile.)
+      $(info   For more information on how to set up your environment to build and run this )
+      $(info   sample, please refer the CUDA Samples documentation and release notes)
+      $(info -----------------------------------------------------------------------------------------------)
+      MPICXX=mpicxx
+      SAMPLE_ENABLED := 0
+endif
 
 # Gencode arguments
 SMS ?= 35 37 50 52 60 61 70 75 80 86
@@ -296,6 +340,15 @@ GENCODE_FLAGS += -gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM)
 endif
 endif
 
+LIBSIZE :=
+ifneq ($(TARGET_OS),darwin)
+ifeq ($(TARGET_SIZE),64)
+LIBSIZE := 64
+endif
+endif
+
+LIBRARIES += -L$(CUDA_PATH)/lib$(LIBSIZE) -lcudart
+
 ifeq ($(SAMPLE_ENABLED),0)
 EXEC ?= @echo "[@]"
 endif
@@ -303,12 +356,9 @@ endif
 ################################################################################
 
 # Target rules
-all: prepare build clean
+all: build
 
-build: violajones
-
-prepare:
-	-@mkdir bin/
+build: simpleMPI
 
 check.deps:
 ifeq ($(SAMPLE_ENABLED),0)
@@ -317,17 +367,22 @@ else
 	@echo "Sample is ready - all dependencies have been met"
 endif
 
-violajones.o:cuda/violajones.cu
+simpleMPI_mpi.o:simpleMPI.cpp
+	$(EXEC) $(MPICXX) $(INCLUDES) $(MPI_CCFLAGS) -o $@ -c $<
+
+simpleMPI.o:simpleMPI.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-violajones: violajones.o
-	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
-	$(EXEC) mv $@ ./bin/
+simpleMPI: simpleMPI_mpi.o simpleMPI.o
+	$(EXEC) $(MPICXX) $(MPI_LDFLAGS) -o $@ $+ $(LIBRARIES)
+	$(EXEC) mkdir -p ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
+	$(EXEC) cp $@ ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
 
 run: build
-	$(EXEC) ./violajones
+	$(EXEC) ./simpleMPI
 
 clean:
-	rm -f violajones.o
+	rm -f simpleMPI simpleMPI_mpi.o simpleMPI.o
+	rm -rf ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/simpleMPI
 
 clobber: clean

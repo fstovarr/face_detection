@@ -266,19 +266,31 @@ ALL_CCFLAGS += $(addprefix -Xcompiler ,$(EXTRA_CCFLAGS))
 
 SAMPLE_ENABLED := 1
 
+# This sample is not supported on Mac OSX
+ifeq ($(TARGET_OS),darwin)
+  $(info >>> WARNING - immaTensorCoreGemm is not supported on Mac OSX - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
+# This sample is not supported on ARMv7
+ifeq ($(TARGET_ARCH),armv7l)
+  $(info >>> WARNING - immaTensorCoreGemm is not supported on ARMv7 - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
 ALL_LDFLAGS :=
 ALL_LDFLAGS += $(ALL_CCFLAGS)
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
 # Common includes and paths for CUDA
-INCLUDES  := -I./lib/common/inc
+INCLUDES  := -I../../common/inc
 LIBRARIES :=
 
 ################################################################################
 
 # Gencode arguments
-SMS ?= 35 37 50 52 60 61 70 75 80 86
+SMS ?= 75 80 86
 
 ifeq ($(SMS),)
 $(info >>> WARNING - no SM architectures have been specified - waiving sample <<<)
@@ -296,6 +308,8 @@ GENCODE_FLAGS += -gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM)
 endif
 endif
 
+ALL_CCFLAGS += -maxrregcount=255
+
 ifeq ($(SAMPLE_ENABLED),0)
 EXEC ?= @echo "[@]"
 endif
@@ -303,12 +317,9 @@ endif
 ################################################################################
 
 # Target rules
-all: prepare build clean
+all: build
 
-build: violajones
-
-prepare:
-	-@mkdir bin/
+build: immaTensorCoreGemm
 
 check.deps:
 ifeq ($(SAMPLE_ENABLED),0)
@@ -317,17 +328,19 @@ else
 	@echo "Sample is ready - all dependencies have been met"
 endif
 
-violajones.o:cuda/violajones.cu
+immaTensorCoreGemm.o:immaTensorCoreGemm.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-violajones: violajones.o
+immaTensorCoreGemm: immaTensorCoreGemm.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
-	$(EXEC) mv $@ ./bin/
+	$(EXEC) mkdir -p ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
+	$(EXEC) cp $@ ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
 
 run: build
-	$(EXEC) ./violajones
+	$(EXEC) ./immaTensorCoreGemm
 
 clean:
-	rm -f violajones.o
+	rm -f immaTensorCoreGemm immaTensorCoreGemm.o
+	rm -rf ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/immaTensorCoreGemm
 
 clobber: clean

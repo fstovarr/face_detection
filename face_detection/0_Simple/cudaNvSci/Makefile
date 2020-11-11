@@ -264,7 +264,21 @@ ALL_CCFLAGS += $(EXTRA_NVCCFLAGS)
 ALL_CCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))
 ALL_CCFLAGS += $(addprefix -Xcompiler ,$(EXTRA_CCFLAGS))
 
+UBUNTU = $(shell lsb_release -i -s 2>/dev/null | grep -i ubuntu)
+
 SAMPLE_ENABLED := 1
+
+# This sample is not supported on Mac OSX
+ifeq ($(TARGET_OS),darwin)
+  $(info >>> WARNING - cudaNvSci is not supported on Mac OSX - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
+# This sample is not supported on ARMv7
+ifeq ($(TARGET_ARCH),armv7l)
+  $(info >>> WARNING - cudaNvSci is not supported on ARMv7 - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
 
 ALL_LDFLAGS :=
 ALL_LDFLAGS += $(ALL_CCFLAGS)
@@ -272,10 +286,38 @@ ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
 # Common includes and paths for CUDA
-INCLUDES  := -I./lib/common/inc
+INCLUDES  := -I../../common/inc
 LIBRARIES :=
 
 ################################################################################
+
+# Makefile include to help find NVSCI Libraries
+include ./findnvsci.mk
+
+#Detect if installed version of GCC supports required C++11
+ifeq ($(TARGET_OS),linux)
+    empty :=
+    space := $(empty) $(empty)
+    GCCVERSIONSTRING := $(shell expr `$(HOST_COMPILER) -dumpversion`)
+#Create version number without "."
+    GCCVERSION := $(shell expr `echo $(GCCVERSIONSTRING)` | cut -f1 -d.)
+    GCCVERSION += $(shell expr `echo $(GCCVERSIONSTRING)` | cut -f2 -d.)
+    GCCVERSION += $(shell expr `echo $(GCCVERSIONSTRING)` | cut -f3 -d.)
+# Make sure the version number has at least 3 decimals
+    GCCVERSION += 00
+# Remove spaces from the version number
+    GCCVERSION := $(subst $(space),$(empty),$(GCCVERSION))
+#$(warning $(GCCVERSION))
+
+    IS_MIN_VERSION := $(shell expr `echo $(GCCVERSION)` \>= 47000)
+
+    ifeq ($(IS_MIN_VERSION), 1)
+        $(info >>> GCC Version is greater or equal to 4.7.0 <<<)
+    else
+        $(info >>> Waiving build. Minimum GCC version required is 4.7.0<<<)
+        SAMPLE_ENABLED := 0
+    endif
+endif
 
 # Gencode arguments
 SMS ?= 35 37 50 52 60 61 70 75 80 86
@@ -296,6 +338,67 @@ GENCODE_FLAGS += -gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM)
 endif
 endif
 
+ifeq ($(TARGET_OS),darwin)
+  ALL_LDFLAGS += -Xcompiler -F/Library/Frameworks -Xlinker -framework -Xlinker CUDA
+else
+  ifeq ($(TARGET_ARCH),x86_64)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/lib64/stubs
+    CUDA_SEARCH_PATH += $(CUDA_PATH)/targets/x86_64-linux/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),armv7l-linux)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/armv7-linux-gnueabihf/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),aarch64-linux)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/aarch64-linux/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),sbsa-linux)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/sbsa-linux/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),armv7l-android)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/armv7-linux-androideabi/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),aarch64-android)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/aarch64-linux-androideabi/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),armv7l-qnx)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/ARMv7-linux-QNX/lib/stubs
+  endif
+
+  ifeq ($(TARGET_ARCH)-$(TARGET_OS),aarch64-qnx)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/aarch64-qnx/lib/stubs
+    ifdef TARGET_OVERRIDE
+        CUDA_SEARCH_PATH := $(CUDA_PATH)/targets/$(TARGET_OVERRIDE)/lib/stubs
+    endif
+  endif
+
+  ifeq ($(TARGET_ARCH),ppc64le)
+    CUDA_SEARCH_PATH ?= $(CUDA_PATH)/targets/ppc64le-linux/lib/stubs
+  endif
+
+  ifeq ($(HOST_ARCH),ppc64le)
+    CUDA_SEARCH_PATH += $(CUDA_PATH)/lib64/stubs
+  endif
+
+  CUDALIB ?= $(shell find -L $(CUDA_SEARCH_PATH) -maxdepth 1 -name libcuda.so 2> /dev/null)
+  ifeq ("$(CUDALIB)","")
+    $(info >>> WARNING - libcuda.so not found, CUDA Driver is not installed.  Please re-install the driver. <<<)
+    SAMPLE_ENABLED := 0
+  else
+    CUDALIB := $(shell echo $(CUDALIB) | sed "s/ .*//" | sed "s/\/libcuda.so//" )
+    LIBRARIES += -L$(CUDALIB) -lcuda
+  endif
+endif
+
+ALL_CCFLAGS += --std=c++11
+
+LIBRARIES += -lnvscibuf -lnvscisync
+
 ifeq ($(SAMPLE_ENABLED),0)
 EXEC ?= @echo "[@]"
 endif
@@ -303,12 +406,9 @@ endif
 ################################################################################
 
 # Target rules
-all: prepare build clean
+all: build
 
-build: violajones
-
-prepare:
-	-@mkdir bin/
+build: cudaNvSci
 
 check.deps:
 ifeq ($(SAMPLE_ENABLED),0)
@@ -317,17 +417,25 @@ else
 	@echo "Sample is ready - all dependencies have been met"
 endif
 
-violajones.o:cuda/violajones.cu
+cudaNvSci.o:cudaNvSci.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-violajones: violajones.o
+imageKernels.o:imageKernels.cu
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+
+main.o:main.cpp
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+
+cudaNvSci: cudaNvSci.o imageKernels.o main.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
-	$(EXEC) mv $@ ./bin/
+	$(EXEC) mkdir -p ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
+	$(EXEC) cp $@ ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
 
 run: build
-	$(EXEC) ./violajones
+	$(EXEC) ./cudaNvSci
 
 clean:
-	rm -f violajones.o
+	rm -f cudaNvSci cudaNvSci.o imageKernels.o main.o
+	rm -rf ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/cudaNvSci
 
 clobber: clean

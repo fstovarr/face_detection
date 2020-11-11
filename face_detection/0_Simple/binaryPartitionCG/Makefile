@@ -272,10 +272,35 @@ ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
 # Common includes and paths for CUDA
-INCLUDES  := -I./lib/common/inc
+INCLUDES  := -I../../common/inc
 LIBRARIES :=
 
 ################################################################################
+
+#Detect if installed version of GCC supports required C++11
+ifeq ($(TARGET_OS),linux)
+    empty :=
+    space := $(empty) $(empty)
+    GCCVERSIONSTRING := $(shell expr `$(HOST_COMPILER) -dumpversion`)
+#Create version number without "."
+    GCCVERSION := $(shell expr `echo $(GCCVERSIONSTRING)` | cut -f1 -d.)
+    GCCVERSION += $(shell expr `echo $(GCCVERSIONSTRING)` | cut -f2 -d.)
+    GCCVERSION += $(shell expr `echo $(GCCVERSIONSTRING)` | cut -f3 -d.)
+# Make sure the version number has at least 3 decimals
+    GCCVERSION += 00
+# Remove spaces from the version number
+    GCCVERSION := $(subst $(space),$(empty),$(GCCVERSION))
+#$(warning $(GCCVERSION))
+
+    IS_MIN_VERSION := $(shell expr `echo $(GCCVERSION)` \>= 47000)
+
+    ifeq ($(IS_MIN_VERSION), 1)
+        $(info >>> GCC Version is greater or equal to 4.7.0 <<<)
+    else
+        $(info >>> Waiving build. Minimum GCC version required is 4.7.0<<<)
+        SAMPLE_ENABLED := 0
+    endif
+endif
 
 # Gencode arguments
 SMS ?= 35 37 50 52 60 61 70 75 80 86
@@ -296,6 +321,8 @@ GENCODE_FLAGS += -gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM)
 endif
 endif
 
+ALL_CCFLAGS += --std=c++11
+
 ifeq ($(SAMPLE_ENABLED),0)
 EXEC ?= @echo "[@]"
 endif
@@ -303,12 +330,9 @@ endif
 ################################################################################
 
 # Target rules
-all: prepare build clean
+all: build
 
-build: violajones
-
-prepare:
-	-@mkdir bin/
+build: binaryPartitionCG
 
 check.deps:
 ifeq ($(SAMPLE_ENABLED),0)
@@ -317,17 +341,19 @@ else
 	@echo "Sample is ready - all dependencies have been met"
 endif
 
-violajones.o:cuda/violajones.cu
+binaryPartitionCG.o:binaryPartitionCG.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-violajones: violajones.o
+binaryPartitionCG: binaryPartitionCG.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
-	$(EXEC) mv $@ ./bin/
+	$(EXEC) mkdir -p ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
+	$(EXEC) cp $@ ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
 
 run: build
-	$(EXEC) ./violajones
+	$(EXEC) ./binaryPartitionCG
 
 clean:
-	rm -f violajones.o
+	rm -f binaryPartitionCG binaryPartitionCG.o
+	rm -rf ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/binaryPartitionCG
 
 clobber: clean

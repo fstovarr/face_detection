@@ -264,7 +264,21 @@ ALL_CCFLAGS += $(EXTRA_NVCCFLAGS)
 ALL_CCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))
 ALL_CCFLAGS += $(addprefix -Xcompiler ,$(EXTRA_CCFLAGS))
 
+UBUNTU = $(shell lsb_release -i -s 2>/dev/null | grep -i ubuntu)
+
 SAMPLE_ENABLED := 1
+
+# This sample is not supported on Mac OSX
+ifeq ($(TARGET_OS),darwin)
+  $(info >>> WARNING - cudaOpenMP is not supported on Mac OSX - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
+
+# This sample is not supported on QNX
+ifeq ($(TARGET_OS),qnx)
+  $(info >>> WARNING - cudaOpenMP is not supported on QNX - waiving sample <<<)
+  SAMPLE_ENABLED := 0
+endif
 
 ALL_LDFLAGS :=
 ALL_LDFLAGS += $(ALL_CCFLAGS)
@@ -272,10 +286,38 @@ ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
 # Common includes and paths for CUDA
-INCLUDES  := -I./lib/common/inc
+INCLUDES  := -I../../common/inc
 LIBRARIES :=
 
 ################################################################################
+
+# Attempt to compile a minimal OpenMP application. If a.out exists, OpenMP is properly set up.
+ifneq (,$(filter $(TARGET_OS),linux android))
+
+ifneq (,$(filter $(TARGET_OS), android))
+     LIBRARIES += -lomp
+else
+     LIBRARIES += -lgomp
+endif
+
+ALL_CCFLAGS += -Xcompiler -fopenmp
+$(shell echo "#include <omp.h>" > test.c ; echo "int main() { omp_get_num_threads(); return 0; }" >> test.c ; $(HOST_COMPILER) -fopenmp test.c)
+OPENMP ?= $(shell find a.out 2>/dev/null)
+
+ifeq ($(OPENMP),)
+      $(info -----------------------------------------------------------------------------------------------)
+      $(info WARNING - OpenMP is unable to compile)
+      $(info -----------------------------------------------------------------------------------------------)
+      $(info   This CUDA Sample cannot be built if the OpenMP compiler is not set up correctly.)
+      $(info   This will be a dry-run of the Makefile.)
+      $(info   For more information on how to set up your environment to build and run this )
+      $(info   sample, please refer the CUDA Samples documentation and release notes)
+      $(info -----------------------------------------------------------------------------------------------)
+      SAMPLE_ENABLED := 0
+endif
+
+$(shell rm a.out test.c 2>/dev/null)
+endif
 
 # Gencode arguments
 SMS ?= 35 37 50 52 60 61 70 75 80 86
@@ -303,12 +345,9 @@ endif
 ################################################################################
 
 # Target rules
-all: prepare build clean
+all: build
 
-build: violajones
-
-prepare:
-	-@mkdir bin/
+build: cudaOpenMP
 
 check.deps:
 ifeq ($(SAMPLE_ENABLED),0)
@@ -317,17 +356,19 @@ else
 	@echo "Sample is ready - all dependencies have been met"
 endif
 
-violajones.o:cuda/violajones.cu
+cudaOpenMP.o:cudaOpenMP.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-violajones: violajones.o
+cudaOpenMP: cudaOpenMP.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
-	$(EXEC) mv $@ ./bin/
+	$(EXEC) mkdir -p ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
+	$(EXEC) cp $@ ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
 
 run: build
-	$(EXEC) ./violajones
+	$(EXEC) ./cudaOpenMP
 
 clean:
-	rm -f violajones.o
+	rm -f cudaOpenMP cudaOpenMP.o
+	rm -rf ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/cudaOpenMP
 
 clobber: clean
