@@ -7,6 +7,7 @@
 #include <map>
 #include "Locations.cpp"
 #include "Boosting.cpp"
+#include "../common.h"
 
 using namespace std;
 

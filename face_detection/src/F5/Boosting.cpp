@@ -8,10 +8,14 @@
 #include <math.h>
 #include <fstream>
 #include <random>
+#include <sys/time.h>
+// #include <omp.h>
+
 #include "Features.cpp"
 #include "Metrics.cpp"
 #include "../Image.cpp"
 #include "../nlohmann/json.hpp"
+#include "../common.h"
 
 #define MIN(x, y) ((x < y) ? x : y)
 
@@ -47,10 +51,12 @@ __global__ void applyFeature(char *d_x_feat, char *d_y_feat, bool *d_p_feat, cha
 
 struct RunningType
 {
-  char type;
+  char *type;
   int threads;
+  int blocks;
   int coresPerMP;
   int multiProcessors;
+  bool _auto;
 };
 
 template <typename T>
@@ -110,8 +116,14 @@ void applyFeatures(vector<vector<T>> const &x, vector<Feature> &features, vector
   int *d_res;
   CHECK(cudaMalloc((void **)&d_res, N_FEATURES * sizeof(int)));
 
-  threadsPerBlock = MIN(cuda.coresPerMP, N_FEATURES);
-  blocksPerGrid = floor(N_FEATURES / threadsPerBlock) + 1;
+  if(cuda._auto) {
+    threadsPerBlock = MIN(cuda.coresPerMP, N_FEATURES);
+    blocksPerGrid = floor(N_FEATURES / threadsPerBlock) + 1;
+  } else {
+    threadsPerBlock = MIN(cuda.coresPerMP, cuda.threads);
+    blocksPerGrid = floor(N_FEATURES / threadsPerBlock) + 1;
+    cuda.blocks = blocksPerGrid;
+  }
 
   int h_res[N_FEATURES];
 
@@ -131,10 +143,17 @@ void applyFeatures(vector<vector<T>> const &x, vector<Feature> &features, vector
 }
 
 template <typename T>
-void applyFeatures(vector<vector<T>> const &x, vector<Feature> const &features, vector<int> &z, bool use_omp)
+void applyFeatures(vector<vector<T>> const &x, vector<Feature> const &features, vector<int> &z, RunningType &rt, bool use_omp)
 {
   size_t n_features = features.size();
-#pragma omp parallel for if (use_omp)
+  
+  int threads = 16;
+
+  if(rt._auto == false) {
+    threads = rt.threads;
+  }
+
+#pragma omp parallel for num_threads(threads) if(use_omp)
   for (size_t i = 0; i < n_features; ++i)
   {
     z[i] = features[i](x);
@@ -213,7 +232,7 @@ struct WeakClassifierF5
 
 ostream &operator<<(ostream &os, WeakClassifierF5 const &clf)
 {
-  cout << "WeakClassifierF5(threshold=" << clf.threshold << ", polarity=" << clf.polarity << ", alpha=" << clf.alpha << " f=" << clf.f << ")";
+  // cout << "WeakClassifierF5(threshold=" << clf.threshold << ", polarity=" << clf.polarity << ", alpha=" << clf.alpha << " f=" << clf.f << ")";
   return os;
 }
 
@@ -346,7 +365,7 @@ const float KEEP_PROBABILITY = 1. / 4.;
 
 typedef pair<vector<WeakClassifierF5>, vector<float>> TrainingResult;
 TrainingResult buildWeakClassifiers(
-    string prefix, int num_features, vector<matrix> const &xis, vector<int> ys, vector<Feature> &features, vector<float> &ws, RunningType &runningType)
+    string prefix, int num_features, vector<matrix> const &xis, vector<int> ys, vector<Feature> &features, vector<float> &ws, RunningType &runningType, bool verbose)
 {
   mt19937_64 rng;
   rng.seed(42);
@@ -385,23 +404,23 @@ TrainingResult buildWeakClassifiers(
   vector<int> z(features.size());
 
   double avgTime = 0.0;
+  auto start = chrono::high_resolution_clock::now();
 
+  struct timeval after, before, result;
+  gettimeofday(&before, NULL);
+  
   for (size_t i = 0; i < xis.size(); ++i)
   {
-    if (i % 1000 == 0)
+    if(verbose && i % 1000 == 0)
     {
       cout << i << "\n";
     }
-    auto start = chrono::high_resolution_clock::now();
 
-    if (runningType.type == 'C')
+    if (*(runningType.type) == 'C')
       applyFeatures(xis[i], features, z, runningType);
     else
-      applyFeatures(xis[i], features, z, runningType.type == 'O');
+      applyFeatures(xis[i], features, z, runningType, (*(runningType.type) == 'O'));
 
-    auto stop = chrono::high_resolution_clock::now();
-    auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
-    avgTime += duration.count();
 
     for (size_t j = 0; j < features.size(); ++j)
     {
@@ -409,102 +428,114 @@ TrainingResult buildWeakClassifiers(
     }
   }
 
-  cout << "Average Feature application time: " << avgTime / (int)xis.size() << "\n";
+  gettimeofday(&after, NULL);
+  timersub(&after, &before, &result);
+
+  auto stop = chrono::high_resolution_clock::now();
+  auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
+  avgTime += duration.count();
+
+  cout << (long int) result.tv_sec << "." << (long int) result.tv_usec << "," << avgTime << "," << runningType.threads << "," << runningType.blocks << "," << runningType.coresPerMP << "," << runningType.multiProcessors << "\n";
 
   auto total_start = chrono::high_resolution_clock::now();
 
   vector<WeakClassifierF5> weak_classifiers;
-  for (int f_i = 0; f_i < num_features; ++f_i)
-  {
-    cout << "Building weak classifier " << f_i + 1 << "/" << num_features << "...\n";
-    auto start = chrono::high_resolution_clock::now();
+  // for (int f_i = 0; f_i < num_features; ++f_i)
+  // {
+  //   if(verbose)
+  //     cout << "Building weak classifier " << f_i + 1 << "/" << num_features << "...\n";
+  //   auto start = chrono::high_resolution_clock::now();
 
-    ws = normalizeWeights(ws);
+  //   ws = normalizeWeights(ws);
 
-    int status_counter = STATUS_EVERY;
+  //   int status_counter = STATUS_EVERY;
 
-    ClassifierResult best{0, 0, numeric_limits<float>::max(), features[0]};
-    bool improved = false;
+  //   ClassifierResult best{0, 0, numeric_limits<float>::max(), features[0]};
+  //   bool improved = false;
 
-    //vector<vector<int>>
+  //   //vector<vector<int>>
 
-    // Select best weak classifier for this round
-    for (size_t i = 0; i < features.size(); ++i)
-    {
-      status_counter -= 1;
-      improved = false;
+  //   // Select best weak classifier for this round
+  //   for (size_t i = 0; i < features.size(); ++i)
+  //   {
+  //     status_counter -= 1;
+  //     improved = false;
 
-      double skip_probability = unif(rng);
-      if (skip_probability > KEEP_PROBABILITY)
-      {
-        if (status_counter == 0)
-        {
-          auto stop = chrono::high_resolution_clock::now();
-          auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
-          auto total_duration = chrono::duration_cast<chrono::duration<double>>(stop - total_start);
-          status_counter = STATUS_EVERY;
-          cout << f_i + 1 << "/" << num_features << " (" << total_duration.count() << ")s "
-               << " (" << duration.count() << "s in this stage)"
-               << " "
-               << 100. * i / features.size() << "% evaluated "
-               << "...\n";
-        }
-        continue;
-      }
+  //     double skip_probability = unif(rng);
+  //     if (skip_probability > KEEP_PROBABILITY)
+  //     {
+  //       if (status_counter == 0)
+  //       {
+  //         auto stop = chrono::high_resolution_clock::now();
+  //         auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
+  //         auto total_duration = chrono::duration_cast<chrono::duration<double>>(stop - total_start);
+  //         status_counter = STATUS_EVERY;
+  //         if(verbose)
+  //           cout << f_i + 1 << "/" << num_features << " (" << total_duration.count() << ")s "
+  //              << " (" << duration.count() << "s in this stage)"
+  //              << " "
+  //              << 100. * i / features.size() << "% evaluated "
+  //              << "...\n";
+  //       }
+  //       continue;
+  //     }
 
-      ClassifierResult result = trainWeakF5(features[i], zs[i], ys, ws);
-      if (result.classification_error < best.classification_error)
-      {
-        improved = true;
-        best = result;
-      }
+  //     ClassifierResult result = trainWeakF5(features[i], zs[i], ys, ws);
+  //     if (result.classification_error < best.classification_error)
+  //     {
+  //       improved = true;
+  //       best = result;
+  //     }
 
-      // Print status every couple of iterations
-      if (improved || status_counter == 0)
-      {
-        auto stop = chrono::high_resolution_clock::now();
-        auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
-        auto total_duration = chrono::duration_cast<chrono::duration<double>>(stop - total_start);
-        status_counter = STATUS_EVERY;
-        if (improved)
-        {
-          cout << f_i + 1 << "/" << num_features << " (" << total_duration.count() << ")s "
-               << " (" << duration.count() << "s in this stage)"
-               << " "
-               << 100. * i / features.size() << "% evaluated "
-               << " Classification error improved to " << best.classification_error << " using " << best.f << "...\n";
-        }
-        else
-        {
-          cout << f_i + 1 << "/" << num_features << " (" << total_duration.count() << ")s "
-               << " (" << duration.count() << "s in this stage)"
-               << " "
-               << 100. * i / features.size() << "% evaluated "
-               << "...\n";
-        }
-      }
-    }
+  //     // Print status every couple of iterations
+  //     if (improved || status_counter == 0)
+  //     {
+  //       auto stop = chrono::high_resolution_clock::now();
+  //       auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
+  //       auto total_duration = chrono::duration_cast<chrono::duration<double>>(stop - total_start);
+  //       status_counter = STATUS_EVERY;
+  //       if (improved)
+  //       {
+  //         if(verbose)
+  //           cout << f_i + 1 << "/" << num_features << " (" << total_duration.count() << ")s "
+  //              << " (" << duration.count() << "s in this stage)"
+  //              << " "
+  //              << 100. * i / features.size() << "% evaluated "
+  //              << " Classification error improved to " << best.classification_error << " using " << best.f << "...\n";
+  //       }
+  //       else
+  //       {
+  //         if(verbose)
+  //           cout << f_i + 1 << "/" << num_features << " (" << total_duration.count() << ")s "
+  //              << " (" << duration.count() << "s in this stage)"
+  //              << " "
+  //              << 100. * i / features.size() << "% evaluated "
+  //              << "...\n";
+  //       }
+  //     }
+  //   }
 
-    // After the best classifier was found, determine alpha
-    float beta = best.classification_error / (1 - best.classification_error);
-    float alpha = log(1. / beta);
+  //   // After the best classifier was found, determine alpha
+  //   float beta = best.classification_error / (1 - best.classification_error);
+  //   float alpha = log(1. / beta);
 
-    // Build the weak classifier
-    WeakClassifierF5 clf{best.threshold, best.polarity, alpha, best.f};
+  //   // Build the weak classifier
+  //   WeakClassifierF5 clf{best.threshold, best.polarity, alpha, best.f};
 
-    // Update the weights for misclassified examples
+  //   // Update the weights for misclassified examples
 
-    for (size_t i = 0; i < xis.size(); ++i)
-    {
-      float h = clf(xis[i]);
-      float e = abs(h - ys[i]);
-      ws[i] = pow(beta, 1 - e);
-    }
+  //   for (size_t i = 0; i < xis.size(); ++i)
+  //   {
+  //     float h = clf(xis[i]);
+  //     float e = abs(h - ys[i]);
+  //     ws[i] = pow(beta, 1 - e);
+  //   }
 
-    // Register this weak classifier
-    weak_classifiers.push_back(clf);
-  }
-  cout << "Done building " << num_features << " classifiers \n";
+  //   // Register this weak classifier
+  //   weak_classifiers.push_back(clf);
+  // }
+  // if(verbose)
+  //   cout << "Done building " << num_features << " classifiers \n";
   return {weak_classifiers, ws};
 }
 
@@ -544,7 +575,7 @@ vector<WeakClassifierF5> readWeakClassifiers(string prefix, int num_features)
   return v;
 }
 
-void trainF5(vector<pair<Image, int>> const &trainingData, RunningType &cuda)
+void trainF5(vector<pair<Image, int>> const &trainingData, RunningType &cuda, bool verbose)
 {
   size_t N = trainingData.size();
   vector<matrix> X(N);
@@ -558,8 +589,10 @@ void trainF5(vector<pair<Image, int>> const &trainingData, RunningType &cuda)
 
   int window_size = X[0].size();
   vector<Feature> features = getFeatures(window_size - 1);
-  cout << "Using " << features.size() << " features\n";
-  cout << "Using " << N << " train samples\n";
+  if(verbose) {
+    cout << "Using " << features.size() << " features\n";
+    cout << "Using " << N << " train samples\n";
+  }
 
   vector<float> ws;
 
@@ -571,7 +604,7 @@ void trainF5(vector<pair<Image, int>> const &trainingData, RunningType &cuda)
   bool train = true;
   if (train)
   {
-    TrainingResult tr = buildWeakClassifiers(prefix, num_features, X, y, features, ws, cuda);
+    TrainingResult tr = buildWeakClassifiers(prefix, num_features, X, y, features, ws, cuda, verbose);
     weak_classifiers = tr.first;
     writeWeakClassifiers(prefix, weak_classifiers);
   }
@@ -579,16 +612,20 @@ void trainF5(vector<pair<Image, int>> const &trainingData, RunningType &cuda)
   {
     weak_classifiers = readWeakClassifiers(prefix, num_features);
   }
+  
+  if(verbose) {
+    cout << weak_classifiers[0] << "\n";
+    cout << weak_classifiers[1] << "\n";
+  }
 
-  cout << weak_classifiers[0] << "\n";
-  cout << weak_classifiers[1] << "\n";
   vector<int> y_pred(N);
   for (size_t i = 0; i < N; ++i)
   {
     y_pred[i] = strongClassifier(X[i], weak_classifiers);
   }
 
-  cout << "Evaluating \n";
+  if(verbose)
+    cout << "Evaluating \n";
 
   evaluate(y, y_pred);
 }

@@ -9,6 +9,7 @@
 #include "../src/FileReader.cpp"
 #include "../src/IntegralImage.cpp"
 #include "../src/FaceDetector.cpp"
+#include "../src/common.h"
 
 #define MIN(x, y) ((x < y) ? x : y)
 
@@ -85,8 +86,31 @@ int loadSamples(string path, vector<pair<Image, int>> *trainingData, int classId
     return loadSamples(path, trainingData, classId, -1);
 }
 
-int main() {
-    bool verbose = true;
+int main(int argc, char *argv[]) {
+    if(argc < 2) {
+        printf("Wrong arguments!\n");
+        return -1;
+    }
+
+    freopen("output.csv", "a+", stdout);
+
+    int THREADS = -1, BLOCKS = -1;
+    char *RUNNING_TYPE = argv[1];
+    
+    printf("%s, ", RUNNING_TYPE);
+
+    if(argv[2] != NULL)
+        sscanf(argv[2], "%d", &THREADS);
+
+    bool _auto = (THREADS == -1);
+
+    int vb;
+    bool verbose = false;
+    if(argv[3] != NULL) {
+        sscanf(argv[3], "%d", &vb);
+        verbose = (vb == 1);
+    }    
+    
     int deviceCount = 0;
     CHECK(cudaGetDeviceCount(&deviceCount));
   
@@ -106,7 +130,7 @@ int main() {
     int coresPerMP = _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor);
     int multiProcessors = deviceProp.multiProcessorCount;
 
-    CudaData cd = CudaData{coresPerMP, multiProcessors};
+    RunningType cd = { RUNNING_TYPE, THREADS, BLOCKS, coresPerMP, multiProcessors, _auto };
   
     if (verbose)
       printf("%d Multiprocessors, %d CUDA Cores/MP | %d CUDA Cores\nMaximum number of threads per block: %d\n",
@@ -117,7 +141,7 @@ int main() {
 
     vector<pair<Image, int>> trainingData;
 
-    int n = 500;
+    int n = 1000;
 
     int positiveSamples = loadSamples("./img/train/face/", &trainingData, 1, n);
 
@@ -126,8 +150,7 @@ int main() {
     bool useF5 = true;
 
     if (useF5) {
-        // testingCuda();
-      trainF5(trainingData, cd);
+      trainF5(trainingData, cd, verbose);
     } else {
       FaceDetector fd = FaceDetector(10);
 

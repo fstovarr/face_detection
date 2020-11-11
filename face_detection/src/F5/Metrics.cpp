@@ -24,18 +24,18 @@ void evaluate(vector<int> const & y_true_s, vector<int> const & y_pred_s) {
   int allNegatives = conf[0][1] + conf[0][0], allPositives = conf[1][0] + conf[1][1];
   int correct = conf[0][0] + conf[1][1];
 
-  for (int i = 0; i < 2; ++i) {
-    for (int j = 0; j < 2; ++j) {
-      cout << conf[i][j] << "\t";
-    }
-    cout << "\n";
-  }
+  // for (int i = 0; i < 2; ++i) {
+  //   for (int j = 0; j < 2; ++j) {
+  //     cout << conf[i][j] << "\t";
+  //   }
+  //   cout << "\n";
+  // }
 
 
-  printf("allNegatives: %d allPositives: %d\n", allNegatives, allPositives);
+  // printf("allNegatives: %d allPositives: %d\n", allNegatives, allPositives);
 
-  printf("False Positive Rate: %d/%d (%f)\n", conf[0][1], allNegatives, conf[0][1] * 1. / allNegatives);
-  printf("False Negative Rate: %d/%d (%f)\n", conf[1][0], allPositives, conf[0][1] * 1. / allPositives);
-  printf("Accuracy: %d/%d (%f)\n", correct, N, correct * 1. / N);
-  printf("Recall: %d/%d (%f)\n", conf[1][1], allPositives, conf[1][1] * 1. / N);
+  // printf("False Positive Rate: %d/%d (%f)\n", conf[0][1], allNegatives, conf[0][1] * 1. / allNegatives);
+  // printf("False Negative Rate: %d/%d (%f)\n", conf[1][0], allPositives, conf[0][1] * 1. / allPositives);
+  // printf("Accuracy: %d/%d (%f)\n", correct, N, correct * 1. / N);
+  // printf("Recall: %d/%d (%f)\n", conf[1][1], allPositives, conf[1][1] * 1. / N);
 }
