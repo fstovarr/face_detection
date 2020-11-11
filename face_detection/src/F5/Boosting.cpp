@@ -1,6 +1,5 @@
 #ifndef BOOSTING_H
 #define BOOSTING_H
-#define USE_OMP
 #include <vector>
 #include <algorithm>
 #include <chrono>
@@ -15,6 +14,8 @@
 #include "../nlohmann/json.hpp"
 
 using json = nlohmann::json;
+
+const bool USE_OMP = true;
 
 
 vector<float> normalizeWeights(vector<float> & v) {
@@ -43,6 +44,10 @@ struct ClassifierResult {
   Feature f;
 };
 
+float weakClassifierZ(float const & theta, int const & polarity, float const & z) {
+  return (sign((polarity * theta) - (polarity * z)) + 1) / 2;
+}
+
 struct WeakClassifierF5 {
   float threshold;
   int polarity;
@@ -52,7 +57,8 @@ struct WeakClassifierF5 {
   template <typename T>
   float operator() (vector<vector<T>> const & x) const {
     float theta = threshold;
-    return (sign((polarity * theta) - (polarity * f(x))) + 1) / 2;
+    float z = f(x);
+    return weakClassifierZ(theta, polarity, z);
   }
 
   json to_json() {
@@ -141,7 +147,8 @@ ThresholdPolarity find_best_threshold(vector<float> const & zs, RunningSums cons
 typedef pair<pair<float, float>, float> f3;
 bool cmp(f3 const & lh, f3 const & rh) { return lh.second < rh.second; }
 
-ThresholdPolarity determineThresholdPolarity(vector<int> const & ys, vector<float> const & ws, vector<float> const & zs) {
+template <typename T>
+ThresholdPolarity determineThresholdPolarity(vector<int> const & ys, vector<float> const & ws, vector<T> const & zs) {
   size_t N = ys.size();
   // sort according to zs
   vector<f3> triplet(N);
@@ -165,23 +172,29 @@ ThresholdPolarity determineThresholdPolarity(vector<int> const & ys, vector<floa
 
 typedef vector<vector<int>> matrix;
 
-ClassifierResult applyFeature(Feature const & f, vector<matrix> const & xis, vector<int> const & ys, vector<float> const & ws) {
-  // determine all feature values
-  vector<float> zs(xis.size());
-  for (size_t i = 0; i < xis.size(); ++i)
-    zs[i] = f(xis[i]);
+template <typename T>
+ClassifierResult trainWeakF5(Feature const & f, vector<T> const & zs, vector<int> const & ys, vector<float> const & ws) {
 
   // determine best threshold
   ThresholdPolarity result = determineThresholdPolarity(ys, ws, zs);
 
   float classification_error = .0;
-  WeakClassifierF5 clf{result.threshold, result.polarity, 0, f};
-  for (size_t i = 0; i < xis.size(); ++i) {
-    float h = clf(xis[i]);
+  for (size_t i = 0; i < zs.size(); ++i) {
+    float h = weakClassifierZ(result.threshold, result.polarity, zs[i]);
     classification_error += ws[i] * abs(h - ys[i]);
   }
 
   return ClassifierResult{result.threshold, result.polarity, classification_error, f};
+}
+
+
+template <typename T>
+void applyFeatures(vector<vector<T>> const & x, vector<Feature> const & features, vector<int> & z) {
+  size_t n_features = features.size();
+  #pragma omp parallel for if(USE_OMP)
+  for (size_t i = 0; i < n_features; ++i) {
+    z[i] = features[i](x);
+  }
 }
 
 const int   STATUS_EVERY     = 2000;
@@ -217,12 +230,32 @@ TrainingResult buildWeakClassifiers(
     }
   }
 
-  auto total_start = chrono::high_resolution_clock::now(); 
+  vector<vector<int>> zs(features.size(), vector<int>(xis.size(), 0));
+  vector<int> z(features.size());
+
+  double avgTime = 0.0;
+  for (size_t i = 0; i < xis.size(); ++i) {
+    if (i % 1000 == 0) {
+      cout << i << "\n";
+    }
+    auto start = chrono::high_resolution_clock::now();
+    applyFeatures(xis[i], features, z);
+    auto stop = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
+    avgTime += duration.count();
+
+    for (size_t j = 0; j < features.size(); ++j) {
+      zs[j][i] = z[j];
+    }
+  }
+  cout << "Average Feature application time: " << avgTime / (int) xis.size() << "\n";
+
+  auto total_start = chrono::high_resolution_clock::now();
 
   vector<WeakClassifierF5> weak_classifiers;
   for (int f_i = 0; f_i < num_features; ++f_i) {
     cout << "Building weak classifier " << f_i + 1 << "/" << num_features << "...\n";
-    auto start = chrono::high_resolution_clock::now(); 
+    auto start = chrono::high_resolution_clock::now();
 
     ws = normalizeWeights(ws);
 
@@ -230,6 +263,8 @@ TrainingResult buildWeakClassifiers(
 
     ClassifierResult best{0, 0, numeric_limits<float>::max(), features[0]};
     bool improved = false;
+
+    //vector<vector<int>>
 
     // Select best weak classifier for this round
     for (size_t i = 0; i < features.size(); ++i) {
@@ -249,7 +284,7 @@ TrainingResult buildWeakClassifiers(
         continue;
       }
 
-      ClassifierResult result = applyFeature(features[i], xis, ys, ws);
+      ClassifierResult result = trainWeakF5(features[i], zs[i], ys, ws);
       if (result.classification_error < best.classification_error) {
         improved = true;
         best = result;
