@@ -15,7 +15,7 @@
 
 using json = nlohmann::json;
 
-const bool USE_OMP = true;
+const bool USE_OMP = false;
 
 
 vector<float> normalizeWeights(vector<float> & v) {

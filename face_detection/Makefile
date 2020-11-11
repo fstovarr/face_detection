@@ -1,6 +1,6 @@
 CC=g++
-FLAGS=-std=c++0x
-CXXFLAGS =-std=c++0x
+FLAGS=-std=c++0x -fopenmp -lm -O3
+CXXFLAGS =-std=c++0x -fopenmp -lm -O3
 
 IMG_FOLDER=img
 
