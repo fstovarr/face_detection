@@ -32,6 +32,16 @@
 
 using json = nlohmann::json;
 
+struct RunningType
+{
+  char *type;
+  int threads;
+  int blocks;
+  int coresPerMP;
+  int multiProcessors;
+  bool _auto;
+};
+
 __global__ void applyFeature(char *d_x_feat, char *d_y_feat, bool *d_p_feat, char *d_img, int *d_res, char img_size, int feature_size)
 {
   int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -49,32 +59,76 @@ __global__ void applyFeature(char *d_x_feat, char *d_y_feat, bool *d_p_feat, cha
   d_res[idx] = acc;
 }
 
-struct RunningType
-{
-  char *type;
-  int threads;
-  int blocks;
-  int coresPerMP;
-  int multiProcessors;
-  bool _auto;
-};
-
 template <typename T>
-void applyFeatures(vector<vector<T>> const &x, vector<Feature> &features, vector<int> &z, RunningType &cuda)
+void applyFeatures(vector<vector<T>> const &x, vector<Feature> const &features, vector<int> &z, RunningType &rt, bool use_omp)
+{
+  size_t n_features = features.size();
+
+  int threads = omp_get_num_threads();
+
+  if (rt._auto == false)
+  {
+    threads = rt.threads;
+  }
+
+#pragma omp parallel for num_threads(threads) if (use_omp)
+  for (size_t i = 0; i < n_features; ++i)
+  {
+    z[i] = features[i](x);
+  }
+}
+template <typename T>
+void applyFeatures(vector<vector<T>> const &x, vector<Feature> &features, vector<int> &z, tuple<char *, char *, bool *> cudaPointers, RunningType &cuda)
 {
   int blocksPerGrid, threadsPerBlock;
   int N_FEATURES = features.size();
   const int IMG_SIZE = x.size();
 
+  char *d_x_feat = get<0>(cudaPointers);
+  char *d_y_feat = get<1>(cudaPointers);
+  bool *d_p_feat = get<2>(cudaPointers);
+
   char h_imgs[IMG_SIZE][IMG_SIZE];
 
   for (int mm = 0; mm < IMG_SIZE; mm++)
-  {
     for (int nn = 0; nn < IMG_SIZE; nn++)
-    {
       h_imgs[mm][nn] = (char)x[mm][nn];
-    }
+
+  char *d_img;
+  CHECK(cudaMalloc((void **)&d_img, IMG_SIZE * IMG_SIZE * sizeof(char)));
+
+  int *d_res;
+  CHECK(cudaMalloc((void **)&d_res, N_FEATURES * sizeof(int)));
+
+  if (cuda._auto)
+  {
+    threadsPerBlock = MIN(cuda.coresPerMP, N_FEATURES);
+    blocksPerGrid = floor(N_FEATURES / threadsPerBlock) + 1;
   }
+  else
+  {
+    threadsPerBlock = MIN(cuda.coresPerMP, cuda.threads);
+    blocksPerGrid = floor(N_FEATURES / threadsPerBlock) + 1;
+    cuda.blocks = blocksPerGrid;
+  }
+
+  int h_res[N_FEATURES];
+
+  CHECK(cudaMemcpy(d_img, h_imgs, IMG_SIZE * IMG_SIZE * sizeof(char), cudaMemcpyHostToDevice));
+
+  applyFeature<<<blocksPerGrid, threadsPerBlock>>>(d_x_feat, d_y_feat, d_p_feat, d_img, d_res, IMG_SIZE, 16);
+
+  CHECK(cudaMemcpy(h_res, d_res, N_FEATURES * sizeof(int), cudaMemcpyDeviceToHost));
+
+  z = vector<int>(h_res, h_res + N_FEATURES);
+
+  CHECK(cudaFree(d_img));
+  CHECK(cudaFree(d_res));
+}
+
+tuple<char *, char *, bool *> copyDataToCuda(vector<Feature> &features)
+{
+  int N_FEATURES = features.size();
 
   char x_features[N_FEATURES][16];
   char y_features[N_FEATURES][16];
@@ -110,58 +164,14 @@ void applyFeatures(vector<vector<T>> const &x, vector<Feature> &features, vector
   CHECK(cudaMalloc((void **)&d_p_feat, sizeof(p_features)));
   CHECK(cudaMemcpy(d_p_feat, p_features, N_FEATURES * 16 * sizeof(bool), cudaMemcpyHostToDevice));
 
-  char *d_img;
-  CHECK(cudaMalloc((void **)&d_img, IMG_SIZE * IMG_SIZE * sizeof(char)));
-
-  int *d_res;
-  CHECK(cudaMalloc((void **)&d_res, N_FEATURES * sizeof(int)));
-
-  if (cuda._auto)
-  {
-    threadsPerBlock = MIN(cuda.coresPerMP, N_FEATURES);
-    blocksPerGrid = floor(N_FEATURES / threadsPerBlock) + 1;
-  }
-  else
-  {
-    threadsPerBlock = MIN(cuda.coresPerMP, cuda.threads);
-    blocksPerGrid = floor(N_FEATURES / threadsPerBlock) + 1;
-    cuda.blocks = blocksPerGrid;
-  }
-
-  int h_res[N_FEATURES];
-
-  CHECK(cudaMemcpy(d_img, h_imgs, IMG_SIZE * IMG_SIZE * sizeof(char), cudaMemcpyHostToDevice));
-
-  applyFeature<<<blocksPerGrid, threadsPerBlock>>>(d_x_feat, d_y_feat, d_p_feat, d_img, d_res, IMG_SIZE, 16);
-
-  CHECK(cudaMemcpy(h_res, d_res, N_FEATURES * sizeof(int), cudaMemcpyDeviceToHost));
-
-  z = vector<int>(h_res, h_res + N_FEATURES);
-
-  CHECK(cudaFree(d_img));
-  CHECK(cudaFree(d_res));
-  CHECK(cudaFree(d_p_feat));
-  CHECK(cudaFree(d_x_feat));
-  CHECK(cudaFree(d_y_feat));
+  return tuple<char *, char *, bool *>(d_x_feat, d_y_feat, d_p_feat);
 }
 
-template <typename T>
-void applyFeatures(vector<vector<T>> const &x, vector<Feature> const &features, vector<int> &z, RunningType &rt, bool use_omp)
+void clearDataOfCuda(tuple<char *, char *, bool *> cudaPointers)
 {
-  size_t n_features = features.size();
-
-  int threads = omp_get_num_threads();
-
-  if (rt._auto == false)
-  {
-    threads = rt.threads;
-  }
-
-#pragma omp parallel for num_threads(threads) if (use_omp)
-  for (size_t i = 0; i < n_features; ++i)
-  {
-    z[i] = features[i](x);
-  }
+  CHECK(cudaFree(get<0>(cudaPointers)));
+  CHECK(cudaFree(get<1>(cudaPointers)));
+  CHECK(cudaFree(get<2>(cudaPointers)));
 }
 
 vector<float> normalizeWeights(vector<float> &v)
@@ -413,6 +423,11 @@ TrainingResult buildWeakClassifiers(
   struct timeval after, before, result;
   gettimeofday(&before, NULL);
 
+  tuple<char *, char *, bool *> cudaPointers;
+
+  if ((*(runningType.type) == 'C'))
+    cudaPointers = copyDataToCuda(features);
+
   for (size_t i = 0; i < xis.size(); ++i)
   {
     if (verbose && i % 1000 == 0)
@@ -421,7 +436,7 @@ TrainingResult buildWeakClassifiers(
     }
 
     if (*(runningType.type) == 'C')
-      applyFeatures(xis[i], features, z, runningType);
+      applyFeatures(xis[i], features, z, cudaPointers, runningType);
     else
       applyFeatures(xis[i], features, z, runningType, (*(runningType.type) == 'O'));
 
@@ -430,6 +445,9 @@ TrainingResult buildWeakClassifiers(
       zs[j][i] = z[j];
     }
   }
+
+  if ((*(runningType.type) == 'C'))
+    clearDataOfCuda(cudaPointers);
 
   gettimeofday(&after, NULL);
   timersub(&after, &before, &result);
@@ -445,7 +463,7 @@ TrainingResult buildWeakClassifiers(
   vector<WeakClassifierF5> weak_classifiers;
   // for (int f_i = 0; f_i < num_features; ++f_i)
   // {
-  //   if(verbose)
+  //   if (verbose)
   //     cout << "Building weak classifier " << f_i + 1 << "/" << num_features << "...\n";
   //   auto start = chrono::high_resolution_clock::now();
 
@@ -473,12 +491,12 @@ TrainingResult buildWeakClassifiers(
   //         auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
   //         auto total_duration = chrono::duration_cast<chrono::duration<double>>(stop - total_start);
   //         status_counter = STATUS_EVERY;
-  //         if(verbose)
+  //         if (verbose)
   //           cout << f_i + 1 << "/" << num_features << " (" << total_duration.count() << ")s "
-  //              << " (" << duration.count() << "s in this stage)"
-  //              << " "
-  //              << 100. * i / features.size() << "% evaluated "
-  //              << "...\n";
+  //                << " (" << duration.count() << "s in this stage)"
+  //                << " "
+  //                << 100. * i / features.size() << "% evaluated "
+  //                << "...\n";
   //       }
   //       continue;
   //     }
@@ -499,21 +517,21 @@ TrainingResult buildWeakClassifiers(
   //       status_counter = STATUS_EVERY;
   //       if (improved)
   //       {
-  //         if(verbose)
+  //         if (verbose)
   //           cout << f_i + 1 << "/" << num_features << " (" << total_duration.count() << ")s "
-  //              << " (" << duration.count() << "s in this stage)"
-  //              << " "
-  //              << 100. * i / features.size() << "% evaluated "
-  //              << " Classification error improved to " << best.classification_error << " using " << best.f << "...\n";
+  //                << " (" << duration.count() << "s in this stage)"
+  //                << " "
+  //                << 100. * i / features.size() << "% evaluated "
+  //                << " Classification error improved to " << best.classification_error << " using " << best.f << "...\n";
   //       }
   //       else
   //       {
-  //         if(verbose)
+  //         if (verbose)
   //           cout << f_i + 1 << "/" << num_features << " (" << total_duration.count() << ")s "
-  //              << " (" << duration.count() << "s in this stage)"
-  //              << " "
-  //              << 100. * i / features.size() << "% evaluated "
-  //              << "...\n";
+  //                << " (" << duration.count() << "s in this stage)"
+  //                << " "
+  //                << 100. * i / features.size() << "% evaluated "
+  //                << "...\n";
   //       }
   //     }
   //   }
@@ -537,7 +555,7 @@ TrainingResult buildWeakClassifiers(
   //   // Register this weak classifier
   //   weak_classifiers.push_back(clf);
   // }
-  // if(verbose)
+  // if (verbose)
   //   cout << "Done building " << num_features << " classifiers \n";
   return {weak_classifiers, ws};
 }
