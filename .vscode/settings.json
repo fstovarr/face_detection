@@ -6,5 +6,6 @@
         "vector": "cpp",
         "iostream": "cpp",
         "ostream": "cpp"
-    }
+    },
+    "jupyter.jupyterServerType": "remote"
 }

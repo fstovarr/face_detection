@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    // freopen("output.csv", "a+", stdout);
+    freopen("output.csv", "a+", stdout);
 
     int THREADS = -1, BLOCKS = -1;
     char *RUNNING_TYPE = argv[1];
