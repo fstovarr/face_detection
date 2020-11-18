@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    freopen("output.csv", "a+", stdout);
+    // freopen("output.csv", "a+", stdout);
 
     int THREADS = -1, BLOCKS = -1;
     char *RUNNING_TYPE = argv[1];
@@ -127,17 +127,24 @@ int main(int argc, char *argv[]) {
     cudaSetDevice(0);
     cudaGetDeviceProperties(&deviceProp, 0);
 
+    size_t cudaFreeMemory, cudaTotalMemory;
+    cudaMemGetInfo(&cudaFreeMemory, &cudaTotalMemory);
+    
     int coresPerMP = _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor);
     int multiProcessors = deviceProp.multiProcessorCount;
 
-    RunningType cd = { RUNNING_TYPE, THREADS, BLOCKS, coresPerMP, multiProcessors, _auto };
-  
-    if (verbose)
-      printf("%d Multiprocessors, %d CUDA Cores/MP | %d CUDA Cores\nMaximum number of threads per block: %d\n",
-             deviceProp.multiProcessorCount,
-             _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor),
-             _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor) * deviceProp.multiProcessorCount,
-             deviceProp.maxThreadsPerBlock);
+    float cudaMemoryOccupation = 0.8;
+    
+    RunningType cd = { RUNNING_TYPE, THREADS, BLOCKS, coresPerMP, multiProcessors, cudaMemoryOccupation, _auto };
+    
+    if (verbose) {
+        cout << "GPU " << " memory: free=" << cudaFreeMemory << ", total=" << cudaTotalMemory << endl;
+        printf("%d Multiprocessors, %d CUDA Cores/MP | %d CUDA Cores\nMaximum number of threads per block: %d\n",
+            deviceProp.multiProcessorCount,
+            _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor),
+            _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor) * deviceProp.multiProcessorCount,
+                deviceProp.maxThreadsPerBlock);
+    }
 
     vector<pair<Image, int>> trainingData;
 

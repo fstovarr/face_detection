@@ -32,6 +32,8 @@
 
 using json = nlohmann::json;
 
+typedef vector<vector<int>> matrix;
+
 struct RunningType
 {
   char *type;
@@ -39,28 +41,60 @@ struct RunningType
   int blocks;
   int coresPerMP;
   int multiProcessors;
+  float cudaMemoryOccupation;
   bool _auto;
 };
 
-__global__ void applyFeature(char *d_x_feat, char *d_y_feat, bool *d_p_feat, char *d_img, int *d_res, char img_size, int feature_size)
+__global__ void applyFeature(char *d_x_feat, char *d_y_feat, bool *d_p_feat, int *d_img, unsigned short int *d_res, const int MEMORY_PER_IMAGE, char IMG_SIZE, int FEATURES_SIZE)
 {
   int idx = blockDim.x * blockIdx.x + threadIdx.x;
+  int currentImage = idx / FEATURES_SIZE;
+  idx = idx % FEATURES_SIZE;
+  const int single_feature_size = 16;
 
-  int acc = 0;
+  unsigned short int acc = 0;
   char x, y;
-  for (int i = 0; i < feature_size; i++)
+  for (int i = 0; i < single_feature_size; i++)
   {
-    x = d_x_feat[idx * feature_size + i];
-    y = d_y_feat[idx * feature_size + i];
-    if (x < img_size && y < img_size)
-      acc += (d_img[x * img_size + y] * (d_p_feat[i] ? 1 : -1));
+    x = d_x_feat[idx * single_feature_size + i];
+    y = d_y_feat[idx * single_feature_size + i];
+    if (x < IMG_SIZE && y < IMG_SIZE)
+      acc += (d_img[currentImage * IMG_SIZE * IMG_SIZE + x * IMG_SIZE + y] * (d_p_feat[i] ? 1 : -1));
   }
 
-  d_res[idx] = acc;
+  d_res[currentImage * FEATURES_SIZE + idx] = acc;
 }
 
-template <typename T>
-void applyFeatures(vector<vector<T>> const &x, vector<Feature> const &features, vector<int> &z, RunningType &rt, bool use_omp)
+void applyFeatures(int *d_img, unsigned short int *d_res, char *d_x_feat, char *d_y_feat, bool *d_p_feat, vector<vector<unsigned short int>> &z, const int &batch, const int FEATURES_SIZE, const int &MEMORY_PER_IMAGE, const int &IMG_SIZE, const int &D_RES_SIZE, RunningType &runningType)
+{
+  const int TOTAL_THREADS = batch * FEATURES_SIZE;
+
+  // TODO Reuse this array passing it through an pointer
+  unsigned short int h_res[batch * FEATURES_SIZE];
+
+  int blocksPerGrid, threadsPerBlock;
+  if (runningType._auto)
+  {
+    threadsPerBlock = MIN(runningType.coresPerMP, TOTAL_THREADS);
+    blocksPerGrid = floor(TOTAL_THREADS / threadsPerBlock) + 1;
+  }
+  else
+  {
+    threadsPerBlock = MIN(runningType.coresPerMP, runningType.threads);
+    blocksPerGrid = floor(TOTAL_THREADS / threadsPerBlock) + 1;
+    runningType.blocks = blocksPerGrid;
+  }
+
+  applyFeature<<<blocksPerGrid, threadsPerBlock>>>(d_x_feat, d_y_feat, d_p_feat, d_img, d_res, MEMORY_PER_IMAGE, IMG_SIZE, FEATURES_SIZE);
+
+  CHECK(cudaMemcpy(h_res, d_res, FEATURES_SIZE * batch * sizeof(unsigned short int), cudaMemcpyDeviceToHost));
+
+  for (int i = 0; i < batch; i++)
+    for (int j = 0; j < FEATURES_SIZE; j++)
+      z[i][j] = h_res[i * FEATURES_SIZE + j];
+}
+
+void applyFeatures(matrix const &x, vector<Feature> const &features, vector<vector<unsigned short int>> &z, const int &BATCH_SIZE, RunningType &rt, bool use_omp)
 {
   size_t n_features = features.size();
 
@@ -71,62 +105,15 @@ void applyFeatures(vector<vector<T>> const &x, vector<Feature> const &features, 
     threads = rt.threads;
   }
 
+  for (int i = 0; i < BATCH_SIZE; i++)
 #pragma omp parallel for num_threads(threads) if (use_omp)
-  for (size_t i = 0; i < n_features; ++i)
-  {
-    z[i] = features[i](x);
-  }
-}
-template <typename T>
-void applyFeatures(vector<vector<T>> const &x, vector<Feature> &features, vector<int> &z, tuple<char *, char *, bool *> cudaPointers, RunningType &cuda)
-{
-  int blocksPerGrid, threadsPerBlock;
-  int N_FEATURES = features.size();
-  const int IMG_SIZE = x.size();
-
-  char *d_x_feat = get<0>(cudaPointers);
-  char *d_y_feat = get<1>(cudaPointers);
-  bool *d_p_feat = get<2>(cudaPointers);
-
-  char h_imgs[IMG_SIZE][IMG_SIZE];
-
-  for (int mm = 0; mm < IMG_SIZE; mm++)
-    for (int nn = 0; nn < IMG_SIZE; nn++)
-      h_imgs[mm][nn] = (char)x[mm][nn];
-
-  char *d_img;
-  CHECK(cudaMalloc((void **)&d_img, IMG_SIZE * IMG_SIZE * sizeof(char)));
-
-  int *d_res;
-  CHECK(cudaMalloc((void **)&d_res, N_FEATURES * sizeof(int)));
-
-  if (cuda._auto)
-  {
-    threadsPerBlock = MIN(cuda.coresPerMP, N_FEATURES);
-    blocksPerGrid = floor(N_FEATURES / threadsPerBlock) + 1;
-  }
-  else
-  {
-    threadsPerBlock = MIN(cuda.coresPerMP, cuda.threads);
-    blocksPerGrid = floor(N_FEATURES / threadsPerBlock) + 1;
-    cuda.blocks = blocksPerGrid;
-  }
-
-  int h_res[N_FEATURES];
-
-  CHECK(cudaMemcpy(d_img, h_imgs, IMG_SIZE * IMG_SIZE * sizeof(char), cudaMemcpyHostToDevice));
-
-  applyFeature<<<blocksPerGrid, threadsPerBlock>>>(d_x_feat, d_y_feat, d_p_feat, d_img, d_res, IMG_SIZE, 16);
-
-  CHECK(cudaMemcpy(h_res, d_res, N_FEATURES * sizeof(int), cudaMemcpyDeviceToHost));
-
-  z = vector<int>(h_res, h_res + N_FEATURES);
-
-  CHECK(cudaFree(d_img));
-  CHECK(cudaFree(d_res));
+    for (size_t j = 0; j < n_features; ++j)
+    {
+      z[i][j] = features[j](x);
+    }
 }
 
-tuple<char *, char *, bool *> copyDataToCuda(vector<Feature> &features)
+void copyFeaturesToCuda(vector<Feature> &features, char *d_x_feat, char *d_y_feat, bool *d_p_feat)
 {
   int N_FEATURES = features.size();
 
@@ -152,26 +139,26 @@ tuple<char *, char *, bool *> copyDataToCuda(vector<Feature> &features)
     }
   }
 
-  char *d_x_feat;
-  CHECK(cudaMalloc((void **)&d_x_feat, sizeof(x_features)));
   CHECK(cudaMemcpy(d_x_feat, x_features, N_FEATURES * 16 * sizeof(char), cudaMemcpyHostToDevice));
-
-  char *d_y_feat;
-  CHECK(cudaMalloc((void **)&d_y_feat, sizeof(y_features)));
   CHECK(cudaMemcpy(d_y_feat, y_features, N_FEATURES * 16 * sizeof(char), cudaMemcpyHostToDevice));
-
-  bool *d_p_feat;
-  CHECK(cudaMalloc((void **)&d_p_feat, sizeof(p_features)));
   CHECK(cudaMemcpy(d_p_feat, p_features, N_FEATURES * 16 * sizeof(bool), cudaMemcpyHostToDevice));
-
-  return tuple<char *, char *, bool *>(d_x_feat, d_y_feat, d_p_feat);
 }
 
-void clearDataOfCuda(tuple<char *, char *, bool *> cudaPointers)
+void freeFeaturesInCuda(tuple<char *, char *, bool *> cudaPointers)
 {
   CHECK(cudaFree(get<0>(cudaPointers)));
   CHECK(cudaFree(get<1>(cudaPointers)));
   CHECK(cudaFree(get<2>(cudaPointers)));
+}
+
+void copyIntegralImagesToCuda(vector<matrix> const &xis, int *h_imgs, int *d_img, const int &start, const int &batch, const int &MEMORY_PER_IMAGE, const int &IMG_SIZE)
+{
+  for (size_t i = 0; i < batch; i++)
+    for (int mm = 0; mm < IMG_SIZE; mm++)
+      for (int nn = 0; nn < IMG_SIZE; nn++)
+        h_imgs[i * IMG_SIZE * IMG_SIZE + mm * IMG_SIZE + nn] = (int)xis[i][mm][nn];
+
+  CHECK(cudaMemcpy(d_img, h_imgs, batch * IMG_SIZE * IMG_SIZE * sizeof(int), cudaMemcpyHostToDevice));
 }
 
 vector<float> normalizeWeights(vector<float> &v)
@@ -355,8 +342,6 @@ ThresholdPolarity determineThresholdPolarity(vector<int> const &ys, vector<float
   return find_best_threshold(zs_sorted, rs);
 }
 
-typedef vector<vector<int>> matrix;
-
 template <typename T>
 ClassifierResult trainWeakF5(Feature const &f, vector<T> const &zs, vector<int> const &ys, vector<float> const &ws)
 {
@@ -414,40 +399,89 @@ TrainingResult buildWeakClassifiers(
     }
   }
 
-  vector<vector<int>> zs(features.size(), vector<int>(xis.size(), 0));
-  vector<int> z(features.size());
-
   double avgTime = 0.0;
   auto start = chrono::high_resolution_clock::now();
 
   struct timeval after, before, result;
   gettimeofday(&before, NULL);
 
-  tuple<char *, char *, bool *> cudaPointers;
+  long int BATCH_SIZE = 1;
+  const int IMG_SIZE = xis[0].size();
+  const int MEMORY_PER_IMAGE = IMG_SIZE * IMG_SIZE * sizeof(int);
+  const int FEATURES_SIZE = features.size();
 
-  if ((*(runningType.type) == 'C'))
-    cudaPointers = copyDataToCuda(features);
+  // CUDA DEFINITIONS
+  unsigned short int *d_res;
+  char *d_x_feat, *d_y_feat;
+  bool *d_p_feat;
+  int *d_img;
 
-  for (size_t i = 0; i < xis.size(); ++i)
+  int D_RES_SIZE = BATCH_SIZE * FEATURES_SIZE * sizeof(unsigned short int);
+
+  if (*(runningType.type) == 'C')
+  {
+    size_t memoryLimit;
+    size_t cudaFreeMemory, cudaTotalMemory;
+    const size_t FEATURES_MEMORY = FEATURES_SIZE * 16 * sizeof(char);
+    const size_t IMG_SIZE_SQR = IMG_SIZE * IMG_SIZE;
+
+    cudaMemGetInfo(&cudaFreeMemory, &cudaTotalMemory);
+    memoryLimit = (size_t)(cudaFreeMemory * runningType.cudaMemoryOccupation);
+
+    BATCH_SIZE = (long int)(memoryLimit - 3.0 * FEATURES_MEMORY) / (IMG_SIZE_SQR * sizeof(int) + IMG_SIZE_SQR * FEATURES_SIZE * sizeof(unsigned short int));
+
+    if (BATCH_SIZE < 1)
+      throw "No space left in device";
+
+    D_RES_SIZE = BATCH_SIZE * FEATURES_SIZE * sizeof(unsigned short int);
+
+    CHECK(cudaMalloc((void **)&d_res, D_RES_SIZE));
+    CHECK(cudaMalloc((void **)&d_img, MEMORY_PER_IMAGE * BATCH_SIZE));
+
+    CHECK(cudaMalloc((void **)&d_x_feat, FEATURES_MEMORY));
+    CHECK(cudaMalloc((void **)&d_y_feat, FEATURES_MEMORY));
+    CHECK(cudaMalloc((void **)&d_p_feat, FEATURES_MEMORY));
+
+    copyFeaturesToCuda(features, d_x_feat, d_y_feat, d_p_feat);
+  }
+
+  vector<vector<int>> zs(FEATURES_SIZE, vector<int>(xis.size(), 0));
+
+  vector<vector<unsigned short int>> z(BATCH_SIZE, vector<unsigned short int>(FEATURES_SIZE, (unsigned short int)0));
+
+  int batch;
+
+  int h_imgs[BATCH_SIZE * IMG_SIZE * IMG_SIZE];
+  unsigned short int h_res[batch * FEATURES_SIZE];
+
+  for (int i = 0; i < xis.size(); i += BATCH_SIZE)
   {
     if (verbose && i % 1000 == 0)
-    {
       cout << i << "\n";
-    }
+
+    batch = MIN(xis.size() - i, BATCH_SIZE);
 
     if (*(runningType.type) == 'C')
-      applyFeatures(xis[i], features, z, cudaPointers, runningType);
-    else
-      applyFeatures(xis[i], features, z, runningType, (*(runningType.type) == 'O'));
-
-    for (size_t j = 0; j < features.size(); ++j)
     {
-      zs[j][i] = z[j];
+      copyIntegralImagesToCuda(xis, h_imgs, d_img, i, batch, MEMORY_PER_IMAGE, IMG_SIZE);
+      applyFeatures(d_img, d_res, d_x_feat, d_y_feat, d_p_feat, z, batch, FEATURES_SIZE, MEMORY_PER_IMAGE, IMG_SIZE, D_RES_SIZE, runningType);
     }
+    else
+      applyFeatures(xis[i], features, z, batch, runningType, (*(runningType.type) == 'O'));
+
+    // for (int ii = 0; ii < batch; ii++)
+    //   for (size_t j = 0; j < features.size(); ++j)
+    //     zs[j][i + ii] = z[ii][j];
   }
 
   if ((*(runningType.type) == 'C'))
-    clearDataOfCuda(cudaPointers);
+  {
+    CHECK(cudaFree(d_x_feat));
+    CHECK(cudaFree(d_y_feat));
+    CHECK(cudaFree(d_p_feat));
+    CHECK(cudaFree(d_img));
+    CHECK(cudaFree(d_res));
+  }
 
   gettimeofday(&after, NULL);
   timersub(&after, &before, &result);
