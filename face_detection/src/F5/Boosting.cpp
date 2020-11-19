@@ -80,7 +80,7 @@ void applyFeatures(int *d_img, unsigned short int *d_res, char *d_x_feat, char *
   }
   else
   {
-    threadsPerBlock = MIN(runningType.coresPerMP, runningType.threads);
+    threadsPerBlock = runningType.threads;
     blocksPerGrid = floor(TOTAL_THREADS / threadsPerBlock) + 1;
     runningType.blocks = blocksPerGrid;
   }
