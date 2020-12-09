@@ -11,9 +11,10 @@ class FileReader
 {
     vector<string> _files;
     vector<string>::iterator _currentFile;
+    vector<string>::iterator _endFile;
 
-public:
-    FileReader(string folder)
+private:
+    void initReader(string &folder)
     {
         DIR *dir;
         struct dirent *ent;
@@ -32,13 +33,32 @@ public:
         {
             perror("");
         }
+    }
 
+public:
+    FileReader(string folder)
+    {
+        initReader(folder);
         _currentFile = _files.begin();
+        _endFile = _files.end();
+    }
+
+    FileReader(string folder, int init, int end)
+    {
+        initReader(folder);
+        
+        _currentFile = _files.begin();
+        advance(_currentFile, init);
+
+        vector<string>::iterator it_end = _files.begin();
+        advance(it_end, end);
+
+        _endFile = it_end;
     }
 
     int remainingSamples()
     {
-        return _files.end() - _currentFile;
+        return _endFile - _currentFile;
     }
 
     int getSample(vector<vector<unsigned char>> *array, bool initArray)

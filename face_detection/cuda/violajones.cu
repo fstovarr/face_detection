@@ -53,6 +53,34 @@ int evaluate(FaceDetector *fd, vector<pair<Image, int>> *trainingData)
     printf("Average Classification Time: %f", classification_time / trainingData->size());
 }
 
+int loadSamples(string path, vector<pair<Image, int>> *trainingData, int init, int end, int classId, int limit)
+{
+    FileReader fr(path, init, end);
+
+    vector<vector<unsigned char>> sample;
+    int count = 0;
+
+    while (fr.remainingSamples())
+    {
+        int res = fr.getSample(&sample, count == 0);
+
+        if (!res)
+        {
+            cout << "Error opening the file";
+            continue;
+        }
+
+        Image img = Image(sample, sample.size());
+
+        (*trainingData).push_back(make_pair(Image(sample, sample.size()), classId));
+
+        if (++count == limit)
+            break;
+    }
+
+    return count;
+}
+
 int loadSamples(string path, vector<pair<Image, int>> *trainingData, int classId, int limit)
 {
     FileReader fr(path);
@@ -150,18 +178,22 @@ int main(int argc, char *argv[]) {
 
     int n = 1000;
 
-    int positiveSamples = loadSamples("./img/train/face/", &trainingData, 1, n);
+    int positiveSamples = loadSamples("./img/train/face/", &trainingData, 0, 3, 1, n);
+
+    for(pair<Image, int> p : trainingData) {
+        cout << p.second << endl;
+    }
 
     int negativeSamples = loadSamples("./img/train/non-face/", &trainingData, 0, n);
 
     bool useF5 = true;
 
-    if (useF5) {
-      trainF5(trainingData, cd, verbose);
-    } else {
-      FaceDetector fd = FaceDetector(10);
+    // if (useF5) {
+    //   trainF5(trainingData, cd, verbose);
+    // } else {
+    //   FaceDetector fd = FaceDetector(10);
 
-      fd.train(trainingData, positiveSamples, negativeSamples);
-      evaluate(&fd, &trainingData);
-    }
+    //   fd.train(trainingData, positiveSamples, negativeSamples);
+    //   evaluate(&fd, &trainingData);
+    // }
 }
