@@ -8,15 +8,16 @@
 #include <math.h>
 #include <fstream>
 #include <random>
+#include <assert.h>
 #include "Features.cpp"
 #include "Metrics.cpp"
 #include "../Image.cpp"
 #include "../nlohmann/json.hpp"
+#include "mpi.h"
 
 using json = nlohmann::json;
 
 const bool USE_OMP = false;
-
 
 vector<float> normalizeWeights(vector<float> & v) {
   float S = 0.0;
@@ -364,6 +365,9 @@ vector<WeakClassifierF5> readWeakClassifiers(string prefix, int num_features) {
   return v;
 }
 
+void trainF5MPI() {
+}
+
 
 void trainF5(vector<pair<Image, int>> const & trainingData) {
   size_t N = trainingData.size();
@@ -395,8 +399,6 @@ void trainF5(vector<pair<Image, int>> const & trainingData) {
   } else {
     weak_classifiers = readWeakClassifiers(prefix, num_features);
   }
-
-
 
   cout << weak_classifiers[0] << "\n";
   cout << weak_classifiers[1] << "\n";
