@@ -108,13 +108,14 @@ void MPImain(int argc, char *argv[], int total_n) {
   //  Process 0 prints an introductory message.
   //
   if ( id == 0 ) {
-    cout << "\n";
-    cout << "COMMUNICATOR_MPI - Master process:\n";
-    cout << "  C++/MPI version\n";
-    cout << "  An MPI example program.\n";
-    cout << "\n";
-    cout << "  The number of processes is " << p << "\n";
-    cout << "\n";
+    freopen("output_mpi.csv", "a+", stdout);
+    // cout << "\n";
+    // cout << "COMMUNICATOR_MPI - Master process:\n";
+    // cout << "  C++/MPI version\n";
+    // cout << "  An MPI example program.\n";
+    // cout << "\n";
+    // cout << "  The number of processes is " << p << "\n";
+    // cout << "\n";
   }
 
   // doesn't handle p < n, assume n >> p
@@ -138,8 +139,8 @@ void MPImain(int argc, char *argv[], int total_n) {
   int positiveSamples = loadSamples(path + "/img/train/face/", &trainingData, rangeStart, rangeEnd, 1, total_n);
   int negativeSamples = loadSamples(path + "/img/train/non-face/", &trainingData, rangeStart, rangeEnd, 0, total_n);
 
-  cout << "process: " << id << "\n";
-  cout << positiveSamples + negativeSamples << "\n";
+  // cout << "process: " << id << "\n";
+  // cout << positiveSamples + negativeSamples << "\n";
 
   size_t N = trainingData.size();
   vector<matrix> X(N);
@@ -166,8 +167,8 @@ void MPImain(int argc, char *argv[], int total_n) {
   auto stop = chrono::high_resolution_clock::now();
   auto duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
 
-  cout << "Process: " << id << "\n";
-  cout << "Duration: " << duration.count() << "\n";
+  // cout << "Process: " << id << "\n";
+  // cout << "Duration: " << duration.count() << "\n";
 
   vector<int> complete;
   if (id == 0) {
@@ -199,7 +200,8 @@ void MPImain(int argc, char *argv[], int total_n) {
   if (id == 0) {
     stop = chrono::high_resolution_clock::now();
     duration = chrono::duration_cast<chrono::duration<double>>(stop - start);
-    cout << "Finished receiving!\n" << duration.count();
+    cout << p << ", " << duration.count() << endl;
+    // cout << "Finished receiving!\n" << duration.count();
   }
 
 
@@ -212,10 +214,10 @@ void MPImain(int argc, char *argv[], int total_n) {
   //
   if ( id == 0 )
   {
-    cout << "\n";
-    cout << "COMMUNICATOR_MPI:\n";
-    cout << "  Normal end of execution.\n";
-    cout << "\n";
+    // cout << "\n";
+    // cout << "COMMUNICATOR_MPI:\n";
+    // cout << "  Normal end of execution.\n";
+    // cout << "\n";
   }
 }
 
